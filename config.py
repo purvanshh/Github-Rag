@@ -40,13 +40,8 @@ class Config:
     gemini_llm_model: str = os.getenv("GEMINI_LLM_MODEL", "gemini-1.5-flash")
 
     # Vector Store
-    vector_store_type: str = os.getenv("VECTOR_STORE", "chroma")  # "chroma" or "pinecone"
     chroma_persist_dir: str = os.getenv("CHROMA_PERSIST_DIR", "./chroma_db")
     chroma_collection: str = os.getenv("CHROMA_COLLECTION", "codebase")
-
-    # Pinecone (optional)
-    pinecone_api_key: str = os.getenv("PINECONE_API_KEY", "")
-    pinecone_index: str = os.getenv("PINECONE_INDEX", "github-rag")
 
     # Retrieval
     top_k: int = int(os.getenv("TOP_K", "5"))

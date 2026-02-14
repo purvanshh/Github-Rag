@@ -19,44 +19,18 @@ import sys
 
 def cmd_ingest(args):
     """Clone, parse, chunk, embed, and index a repository."""
-    from ingestion.clone_repo import clone_repository
-    from ingestion.parse_code import parse_directory
-    from ingestion.chunk_code import create_chunks_from_symbols
-    from indexing.vector_store import ChromaVectorStore
-    from config import config, get_embedder
+    from ingestion.repo_pipeline import RepoIngestionPipeline
 
     repo_url = args.repo_url
-    repo_name = repo_url.rstrip("/").split("/")[-1].replace(".git", "")
 
     print(f"\n{'='*60}")
     print(f"  Ingesting: {repo_url}")
     print(f"{'='*60}\n")
 
-    # Step 1: Clone
-    print("[1/4] Cloning repository...")
-    repo_path = clone_repository(repo_url)
+    pipeline = RepoIngestionPipeline()
+    result = pipeline.ingest_repository(repo_url)
 
-    # Step 2: Parse with Tree-sitter
-    print("[2/4] Parsing source code with Tree-sitter...")
-    symbols = parse_directory(repo_path)
-    print(f"       Found {len(symbols)} symbols")
-
-    # Step 3: Create chunks
-    print("[3/4] Creating semantic code chunks...")
-    chunks = create_chunks_from_symbols(symbols, repo_name)
-    print(f"       Created {len(chunks)} chunks")
-
-    # Step 4: Embed and index
-    print("[4/4] Generating embeddings & indexing...")
-    embedder = get_embedder()
-    vector_store = ChromaVectorStore(
-        collection_name=config.chroma_collection,
-        persist_dir=config.chroma_persist_dir,
-    )
-    embeddings = embedder.embed_chunks(chunks)
-    vector_store.add_chunks(chunks, embeddings)
-
-    print(f"\n✅ Successfully indexed {len(chunks)} chunks from '{repo_name}'")
+    print(f"\n✅ Successfully indexed {result.num_chunks} chunks from '{result.repo_name}'")
 
 
 def cmd_query(args):

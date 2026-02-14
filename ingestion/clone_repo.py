@@ -8,7 +8,9 @@ import os
 from git import Repo
 
 
-REPOS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "repos")
+from config import config
+
+REPOS_DIR = config.repos_dir
 
 
 def clone_repository(repo_url: str, target_dir: str | None = None) -> str:

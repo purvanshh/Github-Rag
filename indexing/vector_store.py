@@ -1,7 +1,7 @@
 """
 vector_store.py — Store and query embeddings in a vector database.
 
-Supports ChromaDB (local) and Pinecone (cloud).
+Supports ChromaDB (local).
 """
 
 from abc import ABC, abstractmethod
