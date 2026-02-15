@@ -82,11 +82,12 @@ from metadata_utils import (
 
 def _build_module_index(repo_path: str) -> dict[str, str]:
     """Map Python module names within the repo to their file paths."""
+    from metadata_utils import normalize_file_path
     index: dict[str, str] = {}
     for file_path in _iter_python_files(repo_path):
         module_name = _module_name_from_path(repo_path, file_path)
         if module_name:
-            index[module_name] = os.path.relpath(file_path, repo_path)
+            index[module_name] = normalize_file_path(file_path, repo_path)
     return index
 
 
@@ -137,7 +138,8 @@ def _extract_import_edges_for_file(
     module_index: dict[str, str],
 ) -> list[DependencyEdge]:
     """Parse a Python file and return all import edges."""
-    rel_path = os.path.relpath(file_path, repo_path)
+    from metadata_utils import normalize_file_path
+    rel_path = normalize_file_path(file_path, repo_path)
     current_module = _module_name_from_path(repo_path, file_path)
     edges: list[DependencyEdge] = []
 

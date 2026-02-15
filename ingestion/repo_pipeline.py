@@ -84,7 +84,7 @@ class RepoIngestionPipeline:
 
         # 2. Parse directory with Tree-sitter
         logger.info("[2/8] Parsing source code...")
-        symbols: list[ParsedSymbol] = parse_directory(repo_path)
+        symbols: list[ParsedSymbol] = parse_directory(repo_path, repo_id=repo_name)
         num_symbols = len(symbols)
         logger.info("Parsed %d symbols", num_symbols)
 

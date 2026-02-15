@@ -189,7 +189,8 @@ def _build_call_graph_for_file(
             callee_short = _extract_callee_name(node, source_bytes)
             if callee_short:
                 callee_fqn = resolve_callee(callee_short)
-                rel_path = os.path.relpath(file_path, repo_path)
+                from metadata_utils import normalize_file_path
+                rel_path = normalize_file_path(file_path, repo_path)
                 graph.add_call(current_func, callee_fqn, file_path=rel_path)
 
         # Recurse

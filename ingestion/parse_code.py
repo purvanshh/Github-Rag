@@ -31,6 +31,8 @@ class ParsedSymbol:
     language: str
     docstring: str | None = None
     parent_class: str | None = None
+    fqn: str = ""
+    symbol_id: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -328,12 +330,19 @@ _EXTRACTORS: dict[str, callable] = {
 # Public API
 # ---------------------------------------------------------------------------
 
-def parse_file(file_path: str, language: str | None = None) -> list[ParsedSymbol]:
+def parse_file(
+    file_path: str,
+    language: str | None = None,
+    repo_path: str | None = None,
+    repo_id: str | None = None,
+) -> list[ParsedSymbol]:
     """Parse a source file and extract symbols using Tree-sitter.
 
     Args:
         file_path: Path to the source file.
         language: Programming language. Auto-detected from extension if not provided.
+        repo_path: Optional repository root path.
+        repo_id: Optional repository ID.
 
     Returns:
         List of ParsedSymbol objects extracted from the file.
@@ -362,14 +371,38 @@ def parse_file(file_path: str, language: str | None = None) -> list[ParsedSymbol
 
     source_bytes = source_code.encode("utf-8")
     tree = parser.parse(source_bytes)
-    return extractor(tree.root_node, source_bytes, file_path)
+    raw_symbols = extractor(tree.root_node, source_bytes, file_path)
+
+    # Post-process symbols to standardize paths, FQNs, and symbol IDs
+    from metadata_utils import (
+        normalize_file_path,
+        normalize_repo_id,
+        module_name_from_path,
+        normalize_fqn,
+        normalize_symbol_id,
+    )
+
+    r_id = normalize_repo_id(repo_id or repo_path or "unknown")
+    rel_path = normalize_file_path(file_path, repo_path)
+    module_name = module_name_from_path(repo_path or os.path.dirname(file_path), file_path)
+
+    for sym in raw_symbols:
+        sym.file_path = rel_path
+        if sym.type == "import":
+            sym.fqn = f"{module_name}.imports"
+        else:
+            sym.fqn = normalize_fqn(module_name, sym.parent_class, sym.name)
+        sym.symbol_id = normalize_symbol_id(r_id, rel_path, sym.fqn, sym.start_line)
+
+    return raw_symbols
 
 
-def parse_directory(repo_path: str) -> list[ParsedSymbol]:
+def parse_directory(repo_path: str, repo_id: str | None = None) -> list[ParsedSymbol]:
     """Recursively parse all supported source files in a directory.
 
     Args:
         repo_path: Root path of the repository.
+        repo_id: Optional repository ID.
 
     Returns:
         List of all ParsedSymbol objects found in the repo.
@@ -388,7 +421,12 @@ def parse_directory(repo_path: str) -> list[ParsedSymbol]:
             file_path = os.path.join(root, file_name)
             language = get_language_for_file(file_path)
             if language:
-                symbols = parse_file(file_path, language)
+                symbols = parse_file(
+                    file_path,
+                    language,
+                    repo_path=repo_path,
+                    repo_id=repo_id,
+                )
                 all_symbols.extend(symbols)
 
     logger.info(

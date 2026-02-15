@@ -163,11 +163,8 @@ class RepoAnalyzer:
 
     def _to_relative_path(self, file_path: str) -> str:
         """Normalize a file path to be relative to the repository root."""
-        if not os.path.isabs(file_path):
-            abs_path = os.path.join(self.repo_path, file_path)
-        else:
-            abs_path = file_path
-        return os.path.relpath(abs_path, self.repo_path)
+        from metadata_utils import normalize_file_path
+        return normalize_file_path(file_path, self.repo_path)
 
     def get_file_dependencies(self, file_path: str) -> List[str]:
         """Return all files/modules that the given file depends on.

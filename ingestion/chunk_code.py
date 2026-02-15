@@ -42,14 +42,19 @@ class CodeChunk:
     start_line: int = 0
     end_line: int = 0
     repo_name: str = ""
+    repo_id: str = ""
     docstring: str | None = None
     parent_class: str | None = None
+    fqn: str = ""
+    symbol_id: str = ""
 
     def __post_init__(self) -> None:
         if not self.id:
             self.id = _make_chunk_id(
-                self.repo_name, self.file_path,
-                self.symbol_name, self.start_line,
+                self.repo_id or self.repo_name,
+                self.file_path,
+                self.fqn or self.symbol_name,
+                self.start_line,
             )
 
     def to_embedding_text(self) -> str:
@@ -79,6 +84,9 @@ class CodeChunk:
             "start_line": self.start_line,
             "end_line": self.end_line,
             "repo_name": self.repo_name,
+            "repo_id": self.repo_id,
+            "fqn": self.fqn,
+            "symbol_id": self.symbol_id,
         }
         if self.parent_class:
             meta["parent_class"] = self.parent_class
@@ -116,8 +124,11 @@ def _split_large_chunk(chunk: CodeChunk, max_lines: int) -> list[CodeChunk]:
             start_line=chunk.start_line + start,
             end_line=chunk.start_line + end - 1,
             repo_name=chunk.repo_name,
+            repo_id=chunk.repo_id,
             docstring=chunk.docstring if part == 1 else None,
             parent_class=chunk.parent_class,
+            fqn=f"{chunk.fqn}__part{part}" if chunk.fqn else "",
+            symbol_id=f"{chunk.symbol_id}__part{part}" if chunk.symbol_id else "",
         ))
         start += max_lines - OVERLAP_LINES
         part += 1
@@ -164,6 +175,9 @@ def create_chunks_from_symbols(
     seen_import_files: set[str] = set()
     import_groups = _group_imports(symbols)
 
+    from metadata_utils import normalize_repo_id
+    repo_id = normalize_repo_id(repo_name)
+
     for symbol in symbols:
         # --- imports: merge per-file ---
         if symbol.type == "import":
@@ -182,6 +196,9 @@ def create_chunks_from_symbols(
                 start_line=group[0].start_line,
                 end_line=group[-1].end_line,
                 repo_name=repo_name,
+                repo_id=repo_id,
+                fqn=symbol.fqn,
+                symbol_id=symbol.symbol_id,
             ))
             continue
 
@@ -196,7 +213,10 @@ def create_chunks_from_symbols(
                 start_line=symbol.start_line,
                 end_line=symbol.end_line,
                 repo_name=repo_name,
+                repo_id=repo_id,
                 docstring=symbol.docstring,
+                fqn=symbol.fqn,
+                symbol_id=symbol.symbol_id,
             ))
             continue
 
@@ -210,8 +230,11 @@ def create_chunks_from_symbols(
             start_line=symbol.start_line,
             end_line=symbol.end_line,
             repo_name=repo_name,
+            repo_id=repo_id,
             docstring=symbol.docstring,
             parent_class=symbol.parent_class,
+            fqn=symbol.fqn,
+            symbol_id=symbol.symbol_id,
         ))
 
     # Post-process: split oversized chunks
