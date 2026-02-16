@@ -46,7 +46,8 @@ def cmd_query(args):
         persist_dir=config.chroma_persist_dir,
     )
     retriever = CodeRetriever(embedder, vector_store, top_k=config.top_k)
-    generator = AnswerGenerator(retriever, model=config.llm_model)
+    model = config.gemini_llm_model if config.llm_provider == "gemini" else config.llm_model
+    generator = AnswerGenerator(retriever, model=model)
 
     result = generator.generate_answer(args.question)
 

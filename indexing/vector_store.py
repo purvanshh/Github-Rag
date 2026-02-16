@@ -18,8 +18,13 @@ class BaseVectorStore(ABC):
         ...
 
     @abstractmethod
-    def query(self, query_embedding: list[float], top_k: int = 5) -> list[dict]:
-        """Retrieve the top-k most similar chunks."""
+    def query(
+        self,
+        query_embedding: list[float],
+        top_k: int = 5,
+        where: dict | None = None,
+    ) -> list[dict]:
+        """Retrieve the top-k most similar chunks matching metadata where filter."""
         ...
 
 
@@ -47,12 +52,18 @@ class ChromaVectorStore(BaseVectorStore):
             metadatas=metadatas,
         )
 
-    def query(self, query_embedding: list[float], top_k: int = 5) -> list[dict]:
-        """Query Chroma for similar chunks."""
+    def query(
+        self,
+        query_embedding: list[float],
+        top_k: int = 5,
+        where: dict | None = None,
+    ) -> list[dict]:
+        """Query Chroma for similar chunks, optionally filtering by metadata."""
         results = self.collection.query(
             query_embeddings=[query_embedding],
             n_results=top_k,
             include=["documents", "metadatas", "distances"],
+            where=where,
         )
         
         output = []

@@ -87,9 +87,10 @@ class RepoAnalyzer:
             top_k_initial=top_k_initial,
             top_k_final=top_k_final,
         )
+        model = config.gemini_llm_model if config.llm_provider == "gemini" else config.llm_model
         self._answer_generator = AnswerGenerator(
             retriever=self._retriever,
-            model=config.llm_model,
+            model=model,
             temperature=config.llm_temperature,
         )
 

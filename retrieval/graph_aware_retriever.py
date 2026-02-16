@@ -100,7 +100,7 @@ class GraphAwareRetriever:
         return neighbor_files
 
     def _collect_neighbor_functions(self, initial_results: List[Dict[str, Any]]) -> Set[str]:
-        """Collect related function names using the call graph.
+        """Collect related function names/FQNs using the call graph.
 
         For each initially retrieved chunk, we include:
             * Functions that call this function
@@ -109,48 +109,18 @@ class GraphAwareRetriever:
         neighbor_funcs: set[str] = set()
         for result in initial_results:
             meta = result.get("metadata", {})
+            fqn = meta.get("fqn")
             symbol_name = meta.get("symbol_name")
-            if not symbol_name:
-                continue
 
-            # Use short name; call graph is built with FQNs when available,
-            # but also supports generic lookups.
-            callers = self.call_graph.get_callers(symbol_name)
-            callees = self.call_graph.get_callees(symbol_name)
-            neighbor_funcs.update(callers)
-            neighbor_funcs.update(callees)
+            for key in (fqn, symbol_name):
+                if not key:
+                    continue
+                callers = self.call_graph.get_callers(key)
+                callees = self.call_graph.get_callees(key)
+                neighbor_funcs.update(callers)
+                neighbor_funcs.update(callees)
 
         return neighbor_funcs
-
-    def _filter_results_by_files(
-        self,
-        results: Iterable[Dict[str, Any]],
-        file_paths: Set[str],
-    ) -> List[Dict[str, Any]]:
-        """Filter vector results to those whose ``file_path`` is in *file_paths*."""
-        if not file_paths:
-            return []
-        filtered: list[Dict[str, Any]] = []
-        for r in results:
-            meta = r.get("metadata", {})
-            if meta.get("file_path") in file_paths:
-                filtered.append(r)
-        return filtered
-
-    def _filter_results_by_functions(
-        self,
-        results: Iterable[Dict[str, Any]],
-        function_names: Set[str],
-    ) -> List[Dict[str, Any]]:
-        """Filter vector results to those whose ``symbol_name`` is in *function_names*."""
-        if not function_names:
-            return []
-        filtered: list[Dict[str, Any]] = []
-        for r in results:
-            meta = r.get("metadata", {})
-            if meta.get("symbol_name") in function_names:
-                filtered.append(r)
-        return filtered
 
     # ------------------------------------------------------------------
     # Public API
@@ -161,9 +131,10 @@ class GraphAwareRetriever:
 
         Steps:
             1. Vector similarity search to get initial chunks.
-            2. Expand candidate set using dependency and call graphs.
-            3. Deduplicate candidates by chunk id.
-            4. Rerank all candidates with a cross-encoder (bge-reranker-large).
+            2. Graph Expansion: Find neighbor files and neighbor functions.
+            3. Retrieve Expanded Nodes: Vector search restricted to graph neighbors.
+            4. Merge: Deduplicate and combine initial and expanded results.
+            5. Rerank: Cross-encoder reranking of candidate chunks.
         """
         # 1) Vector similarity search (initial)
         query_embedding = self.embedder.embed_texts([query])[0]
@@ -172,36 +143,39 @@ class GraphAwareRetriever:
             top_k=self.top_k_initial,
         )
 
-        # 2) Graph-based expansion
+        # 2) Graph Expansion
         neighbor_files = self._collect_neighbor_files(initial_results)
         neighbor_funcs = self._collect_neighbor_functions(initial_results)
 
-        # Fetch additional chunks from the vector store and then filter by
-        # graph neighborhoods. We keep the candidate set bounded via
-        # ``top_k_expanded`` and rely on dedup + reranking.
+        # 3) Retrieve Expanded Nodes
         expanded_results_for_files: List[Dict[str, Any]] = []
         if neighbor_files:
+            where_files = {"file_path": {"$in": list(neighbor_files)}}
             expanded_results_for_files = self.vector_store.query(
                 query_embedding,
                 top_k=self.top_k_expanded,
-            )
-            expanded_results_for_files = self._filter_results_by_files(
-                expanded_results_for_files,
-                neighbor_files,
+                where=where_files,
             )
 
         expanded_results_for_funcs: List[Dict[str, Any]] = []
         if neighbor_funcs:
+            # First try matching by normalized FQN
+            where_fqn = {"fqn": {"$in": list(neighbor_funcs)}}
             expanded_results_for_funcs = self.vector_store.query(
                 query_embedding,
                 top_k=self.top_k_expanded,
+                where=where_fqn,
             )
-            expanded_results_for_funcs = self._filter_results_by_functions(
-                expanded_results_for_funcs,
-                neighbor_funcs,
-            )
+            # Fall back to symbol_name if no results found (legacy / short names)
+            if not expanded_results_for_funcs:
+                where_sym = {"symbol_name": {"$in": list(neighbor_funcs)}}
+                expanded_results_for_funcs = self.vector_store.query(
+                    query_embedding,
+                    top_k=self.top_k_expanded,
+                    where=where_sym,
+                )
 
-        # 3) Merge + deduplicate (prefer earliest occurrence)
+        # 4) Merge + deduplicate (prefer earliest occurrence)
         candidates: Dict[str, Dict[str, Any]] = {}
 
         def add_results(rs: Iterable[Dict[str, Any]]) -> None:
@@ -222,7 +196,7 @@ class GraphAwareRetriever:
         if not merged_results:
             return []
 
-        # 4) Cross-encoder reranking over all candidates.
+        # 5) Cross-encoder reranking over all candidates.
         reranked: List[RerankResult] = self.reranker.rerank(
             query,
             merged_results,
