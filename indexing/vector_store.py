@@ -27,6 +27,11 @@ class BaseVectorStore(ABC):
         """Retrieve the top-k most similar chunks matching metadata where filter."""
         ...
 
+    @abstractmethod
+    def get_all_chunks(self) -> list[dict]:
+        """Retrieve all stored chunks from the database."""
+        ...
+
 
 class ChromaVectorStore(BaseVectorStore):
     """Local vector store using ChromaDB."""
@@ -73,5 +78,19 @@ class ChromaVectorStore(BaseVectorStore):
                 "document": results["documents"][0][i],
                 "metadata": results["metadatas"][0][i],
                 "distance": results["distances"][0][i],
+            })
+        return output
+
+    def get_all_chunks(self) -> list[dict]:
+        """Retrieve all stored chunks from Chroma."""
+        results = self.collection.get(include=["documents", "metadatas"])
+        output = []
+        if not results or not results["ids"]:
+            return []
+        for i in range(len(results["ids"])):
+            output.append({
+                "id": results["ids"][i],
+                "document": results["documents"][i],
+                "metadata": results["metadatas"][i],
             })
         return output

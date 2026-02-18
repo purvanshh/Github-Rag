@@ -127,14 +127,15 @@ class GraphAwareRetriever:
     # ------------------------------------------------------------------
 
     def retrieve(self, query: str) -> List[Dict[str, Any]]:
-        """Run graph-aware retrieval and return the top reranked chunks.
+        """Run graph-aware retrieval augmented with BM25 lexical search and return the top reranked chunks.
 
         Steps:
-            1. Vector similarity search to get initial chunks.
-            2. Graph Expansion: Find neighbor files and neighbor functions.
-            3. Retrieve Expanded Nodes: Vector search restricted to graph neighbors.
-            4. Merge: Deduplicate and combine initial and expanded results.
-            5. Rerank: Cross-encoder reranking of candidate chunks.
+            1. Vector similarity search (initial semantic match).
+            2. Lexical search (BM25).
+            3. Graph Expansion: Find neighbor files and neighbor functions based on combined search.
+            4. Retrieve Expanded Nodes: Vector search restricted to graph neighbors.
+            5. Merge: Deduplicate and combine initial semantic, lexical, and expanded results.
+            6. Rerank: Cross-encoder reranking of candidate chunks.
         """
         # 1) Vector similarity search (initial)
         query_embedding = self.embedder.embed_texts([query])[0]
@@ -143,11 +144,30 @@ class GraphAwareRetriever:
             top_k=self.top_k_initial,
         )
 
-        # 2) Graph Expansion
-        neighbor_files = self._collect_neighbor_files(initial_results)
-        neighbor_funcs = self._collect_neighbor_functions(initial_results)
+        # 2) Lexical search (BM25)
+        from retrieval.bm25 import BM25Retriever
+        all_chunks = self.vector_store.get_all_chunks()
+        bm25 = BM25Retriever()
+        bm25.fit(all_chunks)
+        lexical_results = bm25.query(query, top_k=self.top_k_initial)
 
-        # 3) Retrieve Expanded Nodes
+        # 3) Graph Expansion
+        # Combine initial semantic and lexical results for expansion
+        combined_results = []
+        seen_ids = set()
+        for r in initial_results + lexical_results:
+            chunk_id = r.get("id") or r.get("metadata", {}).get("id")
+            if not chunk_id:
+                meta = r.get("metadata", {})
+                chunk_id = f"{meta.get('file_path')}:{meta.get('symbol_name')}:{meta.get('start_line')}"
+            if chunk_id not in seen_ids:
+                seen_ids.add(chunk_id)
+                combined_results.append(r)
+
+        neighbor_files = self._collect_neighbor_files(combined_results)
+        neighbor_funcs = self._collect_neighbor_functions(combined_results)
+
+        # 4) Retrieve Expanded Nodes
         expanded_results_for_files: List[Dict[str, Any]] = []
         if neighbor_files:
             where_files = {"file_path": {"$in": list(neighbor_files)}}
@@ -175,7 +195,7 @@ class GraphAwareRetriever:
                     where=where_sym,
                 )
 
-        # 4) Merge + deduplicate (prefer earliest occurrence)
+        # 5) Merge + deduplicate (prefer earliest occurrence)
         candidates: Dict[str, Dict[str, Any]] = {}
 
         def add_results(rs: Iterable[Dict[str, Any]]) -> None:
@@ -189,6 +209,7 @@ class GraphAwareRetriever:
                     candidates[chunk_id] = r
 
         add_results(initial_results)
+        add_results(lexical_results)
         add_results(expanded_results_for_files)
         add_results(expanded_results_for_funcs)
 
@@ -196,7 +217,7 @@ class GraphAwareRetriever:
         if not merged_results:
             return []
 
-        # 5) Cross-encoder reranking over all candidates.
+        # 6) Cross-encoder reranking over all candidates.
         reranked: List[RerankResult] = self.reranker.rerank(
             query,
             merged_results,
