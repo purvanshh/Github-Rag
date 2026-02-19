@@ -47,6 +47,7 @@ class CodeChunk:
     parent_class: str | None = None
     fqn: str = ""
     symbol_id: str = ""
+    parent_chunk_id: str | None = None
 
     def __post_init__(self) -> None:
         if not self.id:
@@ -90,6 +91,8 @@ class CodeChunk:
         }
         if self.parent_class:
             meta["parent_class"] = self.parent_class
+        if self.parent_chunk_id:
+            meta["parent_chunk_id"] = self.parent_chunk_id
         return meta
 
 
@@ -129,6 +132,7 @@ def _split_large_chunk(chunk: CodeChunk, max_lines: int) -> list[CodeChunk]:
             parent_class=chunk.parent_class,
             fqn=f"{chunk.fqn}__part{part}" if chunk.fqn else "",
             symbol_id=f"{chunk.symbol_id}__part{part}" if chunk.symbol_id else "",
+            parent_chunk_id=chunk.parent_chunk_id,
         ))
         start += max_lines - OVERLAP_LINES
         part += 1
@@ -154,13 +158,13 @@ def create_chunks_from_symbols(
     repo_name: str,
     max_chunk_lines: int = DEFAULT_MAX_CHUNK_LINES,
 ) -> list[CodeChunk]:
-    """Convert parsed symbols into semantic code chunks.
+    """Convert parsed symbols into semantic, contextual, and hierarchical code chunks.
 
     Strategy:
-      * Functions and methods → one chunk each.
-      * Classes → a *signature-only* chunk (header + docstring, no method
-        bodies).  Methods are already separate symbols.
+      * Functions and methods → one chunk each with contextual and import context.
+      * Classes → a *signature-only* chunk (header + docstring, no method bodies).
       * Imports per file → merged into a single chunk.
+      * Hierarchical relationships → set parent_chunk_id pointing to parent class.
       * Oversized chunks are split with overlap.
 
     Args:
@@ -178,7 +182,38 @@ def create_chunks_from_symbols(
     from metadata_utils import normalize_repo_id
     repo_id = normalize_repo_id(repo_name)
 
+    # 1. Map class FQNs to class chunk IDs for hierarchical linking
+    class_chunk_ids = {}
     for symbol in symbols:
+        if symbol.type == "class":
+            class_chunk_ids[symbol.fqn] = _make_chunk_id(
+                repo_id, symbol.file_path, symbol.fqn or symbol.name, symbol.start_line
+            )
+
+    # 2. Map files to their lists of import statements for dependency context injection
+    file_imports = {}
+    for symbol in symbols:
+        if symbol.type == "import":
+            file_imports.setdefault(symbol.file_path, []).append(symbol.code)
+
+    for symbol in symbols:
+        # Prepend imports and scope context headers (Dependency & Contextual Chunking)
+        imports = file_imports.get(symbol.file_path, [])
+        context_header = ""
+        
+        if symbol.type != "import" and imports:
+            context_header += "// Dependency imports:\n" + "\n".join(imports[:5]) + "\n\n"
+
+        # Add scope context
+        if symbol.parent_class:
+            context_header += f"// Context: Method '{symbol.name}' of class '{symbol.parent_class}'\n"
+        elif symbol.type == "class":
+            context_header += f"// Context: Class '{symbol.name}'\n"
+        elif symbol.type == "function":
+            context_header += f"// Context: Function '{symbol.name}'\n"
+
+        chunk_code = context_header + symbol.code
+
         # --- imports: merge per-file ---
         if symbol.type == "import":
             if symbol.file_path in seen_import_files:
@@ -205,7 +240,7 @@ def create_chunks_from_symbols(
         # --- classes: emit a signature-only chunk ---
         if symbol.type == "class":
             chunks.append(CodeChunk(
-                content=symbol.code,
+                content=chunk_code,
                 file_path=symbol.file_path,
                 symbol_name=symbol.name,
                 symbol_type="class",
@@ -221,8 +256,15 @@ def create_chunks_from_symbols(
             continue
 
         # --- functions / methods ---
+        # Find parent class chunk ID if this is a method
+        parent_chunk_id = None
+        if symbol.parent_class and symbol.fqn:
+            class_fqn = symbol.fqn.rsplit('.', 1)[0]
+            if class_fqn in class_chunk_ids:
+                parent_chunk_id = class_chunk_ids[class_fqn]
+
         chunks.append(CodeChunk(
-            content=symbol.code,
+            content=chunk_code,
             file_path=symbol.file_path,
             symbol_name=symbol.name,
             symbol_type=symbol.type,
@@ -235,6 +277,7 @@ def create_chunks_from_symbols(
             parent_class=symbol.parent_class,
             fqn=symbol.fqn,
             symbol_id=symbol.symbol_id,
+            parent_chunk_id=parent_chunk_id,
         ))
 
     # Post-process: split oversized chunks
