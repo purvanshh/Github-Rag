@@ -18,13 +18,7 @@ import os
 from typing import Any, Dict, List
 
 from config import config, get_embedder
-from graphs.call_graph import (
-    CallGraph,
-    build_call_graph,
-    where_is_function_used,
-    which_functions_does_it_call,
-)
-from graphs.dependency_graph import DependencyGraph, build_dependency_graph
+from graphs.knowledge_graph import RepositoryKnowledgeGraph
 from indexing.vector_store import ChromaVectorStore, BaseVectorStore
 from reasoning.answer_generator import AnswerGenerator
 from reasoning.architecture_summarizer import (
@@ -68,10 +62,12 @@ class RepoAnalyzer:
         )
 
         # --- Graphs: build once and cache ---
-        self._dependency_graph: DependencyGraph = build_dependency_graph(
-            self.repo_path
-        )
-        self._call_graph: CallGraph = build_call_graph(self.repo_path)
+        from ingestion.parse_code import parse_directory
+        self._kg = RepositoryKnowledgeGraph()
+        symbols = parse_directory(self.repo_path, repo_id=self.repo_name)
+        self._kg.build(self.repo_path, symbols)
+        self._dependency_graph = self._kg
+        self._call_graph = self._kg
 
         # --- Retrieval stack (GraphAwareRetriever + AnswerGenerator) ---
         self._embedder = get_embedder()
@@ -151,8 +147,8 @@ class RepoAnalyzer:
                 - ``callers``: functions that call this function.
                 - ``callees``: functions that this function calls.
         """
-        callers = where_is_function_used(self._call_graph, function_name)
-        callees = which_functions_does_it_call(self._call_graph, function_name)
+        callers = self._call_graph.get_callers(function_name)
+        callees = self._call_graph.get_callees(function_name)
         return {
             "callers": callers,
             "callees": callees,

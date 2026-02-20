@@ -23,8 +23,6 @@ import time
 from dataclasses import dataclass
 from typing import Dict, Any
 
-from graphs.call_graph import build_call_graph
-from graphs.dependency_graph import build_dependency_graph
 from config import config, get_embedder
 from indexing.vector_store import ChromaVectorStore, BaseVectorStore
 from ingestion.clone_repo import clone_repository
@@ -103,18 +101,16 @@ class RepoIngestionPipeline:
         logger.info("[5/8] Storing vectors in Chroma...")
         self.vector_store.add_chunks(chunks, embeddings)
 
-        # 6. Build dependency graph
-        logger.info("[6/8] Building dependency graph...")
-        dep_graph = build_dependency_graph(repo_path)
-        dep_hubs = dep_graph.get_most_connected(top_k=10)
+        # 6. Build unified Repository Knowledge Graph
+        logger.info("[6/8] Building Repository Knowledge Graph...")
+        from graphs.knowledge_graph import RepositoryKnowledgeGraph
+        kg = RepositoryKnowledgeGraph()
+        kg.build(repo_path, symbols)
+        dep_hubs = kg.get_most_connected(top_k=10)
+        most_called = kg.get_most_called(top_k=10)
 
-        # 7. Build call graph
-        logger.info("[7/8] Building call graph...")
-        call_graph = build_call_graph(repo_path)
-        most_called = call_graph.get_most_called(top_k=10)
-
-        # 8. Store repo metadata on disk
-        logger.info("[8/8] Storing repo metadata...")
+        # 7. Store repo metadata & knowledge graph on disk
+        logger.info("[7/8] Storing repo metadata & knowledge graph...")
         repo_metadata = {
             "repo_name": repo_name,
             "repo_url": repo_url,
@@ -126,6 +122,15 @@ class RepoIngestionPipeline:
 
         metadata_dir = os.path.join(config.repos_dir, repo_name)
         os.makedirs(metadata_dir, exist_ok=True)
+        
+        # Save knowledge graph
+        kg_path = os.path.join(metadata_dir, "knowledge_graph.json")
+        try:
+            with open(kg_path, "w", encoding="utf-8") as f:
+                json.dump(kg.to_dict(), f, indent=2)
+        except OSError as exc:
+            logger.warning("Failed to write knowledge graph to %s: %s", kg_path, exc)
+
         metadata_path = os.path.join(metadata_dir, "repo_metadata.json")
         try:
             with open(metadata_path, "w", encoding="utf-8") as f:
