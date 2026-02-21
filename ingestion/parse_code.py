@@ -45,6 +45,15 @@ LANGUAGE_MAP: dict[str, str] = {
     ".jsx": "javascript",
     ".ts": "typescript",
     ".tsx": "typescript",
+    ".java": "java",
+    ".go": "go",
+    ".rs": "rust",
+    ".cpp": "cpp",
+    ".hpp": "cpp",
+    ".cc": "cpp",
+    ".cxx": "cpp",
+    ".h": "cpp",
+    ".cs": "c_sharp",
 }
 
 TREE_SITTER_LANGUAGES: dict[str, Language] = {
@@ -326,6 +335,104 @@ _EXTRACTORS: dict[str, callable] = {
 }
 
 
+import re
+
+def _extract_regex(file_path: str, language: str) -> list[ParsedSymbol]:
+    """Regex-based fallback symbol extractor for non-tree-sitter languages."""
+    symbols = []
+    try:
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            lines = f.readlines()
+    except OSError:
+        return []
+
+    # Patterns per language
+    import_pattern = None
+    class_pattern = None
+    func_pattern = None
+
+    if language == "java":
+        import_pattern = re.compile(r"^\s*import\s+([\w\.\*]+);")
+        class_pattern = re.compile(r"^\s*(?:public|private|protected|internal)?\s*(?:static|abstract|final)?\s*(?:class|interface|enum)\s+(\w+)")
+        func_pattern = re.compile(r"^\s*(?:public|private|protected|internal)?\s*(?:static|final|abstract|synchronized)?\s*(?:[\w\<\>\[\]]+)\s+(\w+)\s*\([^\)]*\)\s*(?:throws\s+[\w,\s]+)?\s*\{")
+    elif language == "go":
+        import_pattern = re.compile(r"^\s*import\s+(?:\(\s*|\"([\w\/\.]+)\")")
+        class_pattern = re.compile(r"^\s*type\s+(\w+)\s+(?:struct|interface)")
+        func_pattern = re.compile(r"^\s*func\s+(?:\([^\)]+\)\s+)?(\w+)\s*\(")
+    elif language == "rust":
+        import_pattern = re.compile(r"^\s*use\s+([\w\.\:\*\{\}]+);")
+        class_pattern = re.compile(r"^\s*(?:pub(?:\([^\)]+\))?\s+)?(?:struct|enum|union|trait)\s+(\w+)")
+        func_pattern = re.compile(r"^\s*(?:pub(?:\([^\)]+\))?\s+)?(?:async\s+)?fn\s+(\w+)")
+    elif language == "c_sharp":
+        import_pattern = re.compile(r"^\s*using\s+([\w\.]+);")
+        class_pattern = re.compile(r"^\s*(?:public|private|protected|internal)?\s*(?:static|abstract|partial)?\s*(?:class|struct|interface|enum)\s+(\w+)")
+        func_pattern = re.compile(r"^\s*(?:public|private|protected|internal)?\s*(?:static|virtual|override|async|partial)?\s*(?:[\w\<\>\[\]]+)\s+(\w+)\s*\([^\)]*\)\s*\{")
+    elif language == "cpp":
+        import_pattern = re.compile(r"^\s*#include\s+[\"<]([\w\.\/\_]+)[\">]")
+        class_pattern = re.compile(r"^\s*(?:class|struct)\s+(\w+)")
+        func_pattern = re.compile(r"^\s*(?:[\w\:\<\>\*&\s]+)\s+(\w+)\s*\([^\)]*\)\s*(?:const)?\s*\{")
+
+    if not import_pattern:
+        import_pattern = re.compile(r"^\s*(?:import|using|use|include)\s+(.+)")
+        class_pattern = re.compile(r"^\s*(?:class|struct|interface|type)\s+(\w+)")
+        func_pattern = re.compile(r"^\s*(?:def|fn|func|function)\s+(\w+)")
+
+    current_class = None
+    
+    for i, line in enumerate(lines, 1):
+        line_str = line.strip()
+        
+        # 1. Imports
+        m = import_pattern.match(line)
+        if m:
+            symbols.append(ParsedSymbol(
+                name=line_str,
+                type="import",
+                code=line,
+                start_line=i,
+                end_line=i,
+                file_path=file_path,
+                language=language,
+            ))
+            continue
+            
+        # 2. Classes
+        m = class_pattern.match(line)
+        if m:
+            name = m.group(1)
+            current_class = name
+            symbols.append(ParsedSymbol(
+                name=name,
+                type="class",
+                code=line,
+                start_line=i,
+                end_line=i,
+                file_path=file_path,
+                language=language,
+            ))
+            continue
+            
+        # 3. Functions/Methods
+        m = func_pattern.match(line)
+        if m:
+            name = m.group(1)
+            if name in ("if", "for", "while", "switch", "catch", "return"):
+                continue
+            sym_type = "method" if current_class else "function"
+            symbols.append(ParsedSymbol(
+                name=name,
+                type=sym_type,
+                code=line,
+                start_line=i,
+                end_line=i,
+                file_path=file_path,
+                language=language,
+                parent_class=current_class,
+            ))
+
+    return symbols
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -336,7 +443,7 @@ def parse_file(
     repo_path: str | None = None,
     repo_id: str | None = None,
 ) -> list[ParsedSymbol]:
-    """Parse a source file and extract symbols using Tree-sitter.
+    """Parse a source file and extract symbols using Tree-sitter or regex fallback.
 
     Args:
         file_path: Path to the source file.
@@ -353,25 +460,22 @@ def parse_file(
             return []
 
     parser = _get_parser(language)
-    if parser is None:
-        logger.debug("No parser available for language '%s'", language)
-        return []
-
     extractor = _EXTRACTORS.get(language)
-    if extractor is None:
-        logger.debug("No extractor implemented for language '%s'", language)
-        return []
 
-    try:
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-            source_code = f.read()
-    except OSError as exc:
-        logger.warning("Could not read %s: %s", file_path, exc)
-        return []
+    if parser is None or extractor is None:
+        logger.debug("No tree-sitter parser/extractor available for language '%s', using regex fallback", language)
+        raw_symbols = _extract_regex(file_path, language)
+    else:
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                source_code = f.read()
+        except OSError as exc:
+            logger.warning("Could not read %s: %s", file_path, exc)
+            return []
 
-    source_bytes = source_code.encode("utf-8")
-    tree = parser.parse(source_bytes)
-    raw_symbols = extractor(tree.root_node, source_bytes, file_path)
+        source_bytes = source_code.encode("utf-8")
+        tree = parser.parse(source_bytes)
+        raw_symbols = extractor(tree.root_node, source_bytes, file_path)
 
     # Post-process symbols to standardize paths, FQNs, and symbol IDs
     from metadata_utils import (
