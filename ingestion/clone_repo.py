@@ -14,15 +14,19 @@ REPOS_DIR = config.repos_dir
 
 
 def clone_repository(repo_url: str, target_dir: str | None = None) -> str:
-    """Clone a GitHub repository to a local directory.
+    """Clone a GitHub repository to a local directory, or return the local directory path.
     
     Args:
-        repo_url: Full GitHub URL (e.g., https://github.com/karpathy/nanoGPT)
+        repo_url: Full GitHub URL or local directory path.
         target_dir: Optional custom target directory. Defaults to repos/{repo_name}.
     
     Returns:
-        Path to the cloned repository.
+        Path to the repository.
     """
+    if os.path.exists(repo_url) and os.path.isdir(repo_url):
+        print(f"[INFO] Using existing local repository: {repo_url}")
+        return repo_url
+
     repo_name = repo_url.rstrip("/").split("/")[-1].replace(".git", "")
     
     if target_dir is None:
@@ -30,8 +34,11 @@ def clone_repository(repo_url: str, target_dir: str | None = None) -> str:
     
     if os.path.exists(target_dir):
         print(f"[INFO] Repository already exists at {target_dir}, pulling latest...")
-        repo = Repo(target_dir)
-        repo.remotes.origin.pull()
+        try:
+            repo = Repo(target_dir)
+            repo.remotes.origin.pull()
+        except Exception as exc:
+            print(f"[WARNING] Could not pull from repository: {exc}")
     else:
         print(f"[INFO] Cloning {repo_url} into {target_dir}...")
         os.makedirs(target_dir, exist_ok=True)

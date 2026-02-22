@@ -197,5 +197,9 @@ class RepositoryKnowledgeGraph:
         return callees
 
     def to_dict(self) -> dict:
-        """Export graph as adjacency list dict."""
-        return nx.to_dict_of_lists(self.graph)
+        """Export graph with full node/edge attributes."""
+        return nx.node_link_data(self.graph)
+
+    def load_from_dict(self, data: dict) -> None:
+        """Load graph from node_link_data dict."""
+        self.graph = nx.node_link_graph(data)
