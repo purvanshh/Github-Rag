@@ -241,6 +241,16 @@ class RepoIngestionPipeline:
             total_symbols = num_symbols
             total_chunks = num_chunks
 
+        # 6.5. Ingest GitHub metadata & commits
+        logger.info("[6.5/8] Integrating GitHub API metadata & commits...")
+        try:
+            from ingestion.github_integration import GitHubIntegrationEngine
+            gh_engine = GitHubIntegrationEngine()
+            gh_chunks = gh_engine.ingest_metadata(repo_path, repo_name, repo_url)
+            total_chunks = len(self.vector_store.get_all_chunks())
+        except Exception as exc:
+            logger.warning("Failed to ingest GitHub metadata: %s", exc)
+
         # 7. Store repo metadata & knowledge graph on disk
         logger.info("[7/8] Storing repo metadata & knowledge graph...")
         repo_metadata = {
