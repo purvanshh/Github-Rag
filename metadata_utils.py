@@ -58,6 +58,8 @@ def normalize_file_path(file_path: str, repo_path: str | None = None) -> str:
     # Resolve absolute path if repo_path is provided
     if repo_path:
         repo_abs = os.path.abspath(repo_path)
+        if not os.path.isabs(file_path):
+            file_path = os.path.join(repo_path, file_path)
         file_abs = os.path.abspath(file_path)
         # Check if file_path is indeed under repo_path
         if file_abs.startswith(repo_abs):

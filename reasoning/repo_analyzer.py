@@ -69,30 +69,41 @@ class RepoAnalyzer:
         self._dependency_graph = self._kg
         self._call_graph = self._kg
 
-        # --- Retrieval stack (GraphAwareRetriever + AnswerGenerator) ---
-        self._embedder = get_embedder()
-        self._vector_store: BaseVectorStore = ChromaVectorStore(
-            collection_name=config.chroma_collection,
-            persist_dir=config.chroma_persist_dir,
-        )
-        self._retriever = GraphAwareRetriever(
-            embedder=self._embedder,
-            vector_store=self._vector_store,
-            dependency_graph=self._dependency_graph,
-            call_graph=self._call_graph,
-            top_k_initial=top_k_initial,
-            top_k_final=top_k_final,
-        )
-        model = config.gemini_llm_model if config.llm_provider == "gemini" else config.llm_model
-        self._answer_generator = AnswerGenerator(
-            retriever=self._retriever,
-            model=model,
-            temperature=config.llm_temperature,
-        )
+        self._top_k_initial = top_k_initial
+        self._top_k_final = top_k_final
 
         # --- Repo metadata helpers ---
         self._directory_tree: str = build_directory_tree(self.repo_path)
         self._architecture_summary_cache: Dict[str, Any] | None = None
+
+    @property
+    def retriever(self) -> GraphAwareRetriever:
+        if not hasattr(self, "_retriever"):
+            self._embedder = get_embedder()
+            self._vector_store: BaseVectorStore = ChromaVectorStore(
+                collection_name=config.chroma_collection,
+                persist_dir=config.chroma_persist_dir,
+            )
+            self._retriever = GraphAwareRetriever(
+                embedder=self._embedder,
+                vector_store=self._vector_store,
+                dependency_graph=self._dependency_graph,
+                call_graph=self._call_graph,
+                top_k_initial=self._top_k_initial,
+                top_k_final=self._top_k_final,
+            )
+        return self._retriever
+
+    @property
+    def answer_generator(self) -> AnswerGenerator:
+        if not hasattr(self, "_answer_generator"):
+            model = config.gemini_llm_model if config.llm_provider == "gemini" else config.llm_model
+            self._answer_generator = AnswerGenerator(
+                retriever=self.retriever,
+                model=model,
+                temperature=config.llm_temperature,
+            )
+        return self._answer_generator
 
     # ------------------------------------------------------------------
     # 1. Question answering over the codebase
@@ -110,7 +121,7 @@ class RepoAnalyzer:
             Dict with ``answer``, ``sources``, and ``model`` keys, as
             produced by :class:`AnswerGenerator`.
         """
-        return self._answer_generator.generate_answer(query)
+        return self.answer_generator.generate_answer(query)
 
     # ------------------------------------------------------------------
     # 2. Architecture summary
@@ -153,6 +164,22 @@ class RepoAnalyzer:
             "callers": callers,
             "callees": callees,
         }
+
+    def find_references(self, symbol_name: str) -> List[str]:
+        """Find all nodes that reference or call a given symbol."""
+        return self._kg.get_references(symbol_name)
+
+    def find_implementations(self, class_name: str) -> List[str]:
+        """Find all subclasses that implement a given class."""
+        return self._kg.get_implementations(class_name)
+
+    def find_inheritance(self, class_name: str) -> List[str]:
+        """Find parent classes of a given class."""
+        return self._kg.get_inheritance(class_name)
+
+    def find_dependency_chains(self, file_path: str) -> List[List[str]]:
+        """Find import chains originating from a source file."""
+        return self._kg.get_dependency_chains(self._to_relative_path(file_path))
 
     # ------------------------------------------------------------------
     # 4. File dependencies via dependency graph

@@ -51,7 +51,8 @@ class RepositoryKnowledgeGraph:
             self.add_node(sym.fqn, sym.type, file_path=sym.file_path, line=sym.start_line)
 
             # Ensure the module node containing the symbol exists
-            mod_name = module_name_from_path(repo_path, sym.file_path)
+            abs_path = os.path.join(repo_path, sym.file_path)
+            mod_name = module_name_from_path(repo_path, abs_path)
             self.add_node(mod_name, "module", file_path=sym.file_path)
 
             # Add composition/ownership edge
@@ -108,8 +109,9 @@ class RepositoryKnowledgeGraph:
         # 3. Add Module-level imports edges
         for sym in symbols:
             if sym.type == "import":
-                mod_name = module_name_from_path(repo_path, sym.file_path)
-                file_path = normalize_file_path(sym.file_path, repo_path)
+                abs_path = os.path.join(repo_path, sym.file_path)
+                mod_name = module_name_from_path(repo_path, abs_path)
+                file_path = normalize_file_path(abs_path, repo_path)
 
                 if file_path in resolver.file_imports:
                     for alias, target in resolver.file_imports[file_path].items():
@@ -195,6 +197,67 @@ class RepositoryKnowledgeGraph:
                     if edge_attr and edge_attr.get("type") == "calls":
                         callees.append(succ)
         return callees
+
+    def get_references(self, symbol_name: str) -> list[str]:
+        """Get all nodes that reference or call this symbol."""
+        refs = []
+        for node in self.graph.nodes:
+            if node == symbol_name or node.endswith(f".{symbol_name}"):
+                for pred in self.graph.predecessors(node):
+                    refs.append(pred)
+        return list(set(refs))
+
+    def get_implementations(self, class_name: str) -> list[str]:
+        """Get all classes that inherit from/implement this class."""
+        impls = []
+        for node in self.graph.nodes:
+            if node == class_name or node.endswith(f".{class_name}"):
+                for pred in self.graph.predecessors(node):
+                    edge_attr = self.graph.get_edge_data(pred, node)
+                    if edge_attr and edge_attr.get("type") == "inherits":
+                        impls.append(pred)
+        return impls
+
+    def get_inheritance(self, class_name: str) -> list[str]:
+        """Get all base classes this class inherits from."""
+        bases = []
+        for node in self.graph.nodes:
+            if node == class_name or node.endswith(f".{class_name}"):
+                for succ in self.graph.successors(node):
+                    edge_attr = self.graph.get_edge_data(node, succ)
+                    if edge_attr and edge_attr.get("type") == "inherits":
+                        bases.append(succ)
+        return bases
+
+    def get_dependency_chains(self, file_path: str) -> list[list[str]]:
+        """Get import dependency chains originating from this module file."""
+        start_node = None
+        for node, attr in self.graph.nodes(data=True):
+            if attr.get("type") == "module" and attr.get("file_path") == file_path:
+                start_node = node
+                break
+        if not start_node:
+            return []
+            
+        chains = []
+        def _dfs(curr: str, path: list[str], depth: int):
+            if depth > 3:
+                return
+            successors = []
+            for succ in self.graph.successors(curr):
+                edge_attr = self.graph.get_edge_data(curr, succ)
+                if edge_attr and edge_attr.get("type") == "imports":
+                    successors.append(succ)
+            if not successors:
+                if len(path) > 1:
+                    chains.append(path)
+                return
+            for succ in successors:
+                if succ not in path:
+                    _dfs(succ, path + [succ], depth + 1)
+                    
+        _dfs(start_node, [start_node], 1)
+        return chains
 
     def to_dict(self) -> dict:
         """Export graph with full node/edge attributes."""

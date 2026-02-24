@@ -36,7 +36,8 @@ class SymbolResolver:
             if sym.type == "import":
                 continue
 
-            mod_name = module_name_from_path(self.repo_path or "", sym.file_path)
+            abs_path = os.path.join(self.repo_path or "", sym.file_path)
+            mod_name = module_name_from_path(self.repo_path or "", abs_path)
             if mod_name not in self.module_definitions:
                 self.module_definitions[mod_name] = {}
 
@@ -55,7 +56,8 @@ class SymbolResolver:
             if sym.type != "import":
                 continue
 
-            file_path = normalize_file_path(sym.file_path, self.repo_path)
+            abs_path = os.path.join(self.repo_path or "", sym.file_path)
+            file_path = normalize_file_path(abs_path, self.repo_path)
             if file_path not in self.file_imports:
                 self.file_imports[file_path] = {}
 
