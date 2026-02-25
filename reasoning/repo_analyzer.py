@@ -26,6 +26,7 @@ from reasoning.architecture_summarizer import (
     generate_architecture_summary,
 )
 from retrieval.graph_aware_retriever import GraphAwareRetriever
+from reasoning.repo_memory import RepositoryMemory
 
 
 class RepoAnalyzer:
@@ -71,6 +72,7 @@ class RepoAnalyzer:
 
         self._top_k_initial = top_k_initial
         self._top_k_final = top_k_final
+        self._memory = RepositoryMemory(self.repo_name)
 
         # --- Repo metadata helpers ---
         self._directory_tree: str = build_directory_tree(self.repo_path)
@@ -140,6 +142,18 @@ class RepoAnalyzer:
                 temperature=config.llm_temperature,
             )
         return self._architecture_summary_cache
+
+    def get_memory_context(self) -> str:
+        """Get the repository memory context (profile & FAQ info)."""
+        return self._memory.get_memory_context()
+
+    def add_faq(self, question: str, answer: str) -> None:
+        """Add a frequently asked question to the repository memory."""
+        self._memory.add_faq(question, answer)
+
+    def update_profile(self, updates: Dict[str, Any]) -> None:
+        """Update repository stack profile details."""
+        self._memory.update_profile(updates)
 
     # ------------------------------------------------------------------
     # 3. Function usage via call graph
