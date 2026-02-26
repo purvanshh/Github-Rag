@@ -57,9 +57,11 @@ class AnswerGenerator:
         retriever: Any,
         model: str | None = None,
         temperature: float = 0.1,
+        repo_name: str | None = None,
     ):
         self.retriever = retriever
         self.temperature = temperature
+        self.repo_name = repo_name or "unknown"
         self._use_gemini = config.llm_provider == "gemini"
         if model is not None:
             self.model = model
@@ -73,12 +75,16 @@ class AnswerGenerator:
         else:
             from openai import OpenAI
             self._openai_client = OpenAI(api_key=get_openai_api_key())
+        
+        from reasoning.conversation_manager import ConversationManager
+        self.conversation_manager = ConversationManager(self.repo_name)
 
-    def generate_answer(self, question: str) -> Dict[str, Any]:
+    def generate_answer(self, question: str, conversation_id: str | None = None) -> Dict[str, Any]:
         """Generate an answer to a codebase question.
 
         Args:
             question: Natural language question about the codebase.
+            conversation_id: Optional conversation ID for multi-turn history.
 
         Returns:
             Dict with 'answer', 'sources', and 'model' used.
@@ -87,9 +93,20 @@ class AnswerGenerator:
         context = self.retriever.retrieve_with_context(question)
         raw_results = self.retriever.retrieve(question)
 
+        # Build conversation history context
+        history_context = ""
+        if conversation_id:
+            history = self.conversation_manager.get_history(conversation_id)
+            if history:
+                history_context = "Conversation history:\n"
+                for msg in history:
+                    role = "User" if msg["role"] == "user" else "Assistant"
+                    history_context += f"{role}: {msg['content']}\n"
+                history_context += "\n"
+
         # Build prompt
         user_prompt = QA_PROMPT_TEMPLATE.format(
-            context=context,
+            context=f"{history_context}Indexed Code Context:\n{context}",
             question=question,
         )
 
@@ -110,6 +127,11 @@ class AnswerGenerator:
                 ],
             )
             answer = response.choices[0].message.content if response.choices else ""
+
+        # Persistence of multi-turn conversation
+        if conversation_id:
+            self.conversation_manager.add_message(conversation_id, "user", question)
+            self.conversation_manager.add_message(conversation_id, "assistant", answer)
 
         # Extract source citations in a normalized format
         sources = normalize_sources(raw_results)

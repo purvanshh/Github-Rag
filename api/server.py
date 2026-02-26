@@ -54,6 +54,7 @@ class IngestResponse(BaseModel):
 class QueryRequest(BaseModel):
     repo: str
     query: str
+    conversation_id: str | None = None
 
 
 class QueryResponse(BaseModel):
@@ -156,7 +157,7 @@ def query_codebase(request: QueryRequest) -> QueryResponse:
     router = QueryRouter(analyzer)
 
     try:
-        result = router.route_query(request.query)
+        result = router.route_query(request.query, request.conversation_id)
     except Exception as exc:  # pragma: no cover - LLM / IO errors
         logging.exception("Query failed")
         raise HTTPException(status_code=500, detail=str(exc)) from exc

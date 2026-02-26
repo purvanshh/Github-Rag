@@ -104,6 +104,7 @@ class RepoAnalyzer:
                 retriever=self.retriever,
                 model=model,
                 temperature=config.llm_temperature,
+                repo_name=self.repo_name,
             )
         return self._answer_generator
 
@@ -111,7 +112,7 @@ class RepoAnalyzer:
     # 1. Question answering over the codebase
     # ------------------------------------------------------------------
 
-    def ask_question(self, query: str) -> Dict[str, Any]:
+    def ask_question(self, query: str, conversation_id: str | None = None) -> Dict[str, Any]:
         """Answer an architectural question about the repository.
 
         Pipeline:
@@ -123,7 +124,7 @@ class RepoAnalyzer:
             Dict with ``answer``, ``sources``, and ``model`` keys, as
             produced by :class:`AnswerGenerator`.
         """
-        return self.answer_generator.generate_answer(query)
+        return self.answer_generator.generate_answer(query, conversation_id)
 
     # ------------------------------------------------------------------
     # 2. Architecture summary

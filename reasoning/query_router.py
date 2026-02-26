@@ -124,7 +124,7 @@ class QueryRouter:
             return m.group(1).strip().strip("`'\"")
         return None
 
-    def route_query(self, query: str) -> dict[str, Any]:
+    def route_query(self, query: str, conversation_id: str | None = None) -> dict[str, Any]:
         """Route a query to the appropriate RepoAnalyzer method."""
         category = self.classify_query(query)
 
@@ -132,20 +132,20 @@ class QueryRouter:
             function_name = self._extract_function_name(query)
             if function_name:
                 return self.analyzer.find_function_usage(function_name)
-            return self.analyzer.ask_question(query)
+            return self.analyzer.ask_question(query, conversation_id)
 
         if category == "file_dependencies":
             file_path = self._extract_file_path(query)
             if file_path:
                 deps = self.analyzer.get_file_dependencies(file_path)
                 return {"file": file_path, "dependencies": deps}
-            return self.analyzer.ask_question(query)
+            return self.analyzer.ask_question(query, conversation_id)
 
         if category == "file_explanation":
             file_path = self._extract_file_path(query)
             if file_path:
                 return self.analyzer.explain_file(file_path)
-            return self.analyzer.ask_question(query)
+            return self.analyzer.ask_question(query, conversation_id)
 
         if category == "architecture":
             return self.analyzer.get_architecture_summary()
@@ -153,4 +153,4 @@ class QueryRouter:
         if category == "repo_overview":
             return self.analyzer.get_repo_overview()
 
-        return self.analyzer.ask_question(query)
+        return self.analyzer.ask_question(query, conversation_id)
