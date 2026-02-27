@@ -108,6 +108,13 @@ class RepoAnalyzer:
             )
         return self._answer_generator
 
+    @property
+    def query_planner(self) -> Any:
+        if not hasattr(self, "_query_planner"):
+            from reasoning.query_planner import AgenticQueryPlanner
+            self._query_planner = AgenticQueryPlanner(self)
+        return self._query_planner
+
     # ------------------------------------------------------------------
     # 1. Question answering over the codebase
     # ------------------------------------------------------------------
@@ -125,6 +132,11 @@ class RepoAnalyzer:
             produced by :class:`AnswerGenerator`.
         """
         return self.answer_generator.generate_answer(query, conversation_id)
+
+    def ask_agentic(self, query: str, conversation_id: str | None = None) -> Dict[str, Any]:
+        """Answer queries using step-by-step agentic execution plans."""
+        plan = self.query_planner.create_plan(query)
+        return self.query_planner.execute_plan(plan, conversation_id)
 
     # ------------------------------------------------------------------
     # 2. Architecture summary
