@@ -229,6 +229,42 @@ def repo_function_usage(repo: str, name: str) -> FunctionUsageResponse:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@app.get("/repo/{repo}/diagrams/dependency")
+def repo_dependency_diagram(repo: str) -> dict:
+    """Return a module dependency chart in Mermaid format."""
+    try:
+        analyzer = _get_repo_analyzer(repo)
+        chart = analyzer.get_dependency_chart()
+        return {"mermaid": chart}
+    except Exception as exc:
+        logging.exception("Dependency diagram failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/repo/{repo}/diagrams/class")
+def repo_class_diagram(repo: str) -> dict:
+    """Return a class inheritance hierarchy diagram in Mermaid format."""
+    try:
+        analyzer = _get_repo_analyzer(repo)
+        chart = analyzer.get_class_hierarchy()
+        return {"mermaid": chart}
+    except Exception as exc:
+        logging.exception("Class diagram failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/repo/{repo}/diagrams/sequence/{name}")
+def repo_sequence_diagram(repo: str, name: str) -> dict:
+    """Return a sequence call chart in Mermaid format for a function."""
+    try:
+        analyzer = _get_repo_analyzer(repo)
+        chart = analyzer.get_sequence_chart(name)
+        return {"mermaid": chart}
+    except Exception as exc:
+        logging.exception("Sequence diagram failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 if __name__ == "__main__":  # pragma: no cover
     import uvicorn
 

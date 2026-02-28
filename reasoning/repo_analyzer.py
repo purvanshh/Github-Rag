@@ -138,6 +138,25 @@ class RepoAnalyzer:
         plan = self.query_planner.create_plan(query)
         return self.query_planner.execute_plan(plan, conversation_id)
 
+    @property
+    def architecture_analyzer(self) -> Any:
+        if not hasattr(self, "_architecture_analyzer"):
+            from reasoning.architecture_analyzer import ArchitectureAnalyzer
+            self._architecture_analyzer = ArchitectureAnalyzer(self)
+        return self._architecture_analyzer
+
+    def get_dependency_chart(self) -> str:
+        """Returns module dependency flow in Mermaid format."""
+        return self.architecture_analyzer.generate_dependency_chart()
+
+    def get_class_hierarchy(self) -> str:
+        """Returns class inheritance layout in Mermaid format."""
+        return self.architecture_analyzer.generate_class_hierarchy()
+
+    def get_sequence_chart(self, function_name: str) -> str:
+        """Returns function execution calls in Mermaid format."""
+        return self.architecture_analyzer.generate_sequence_chart(function_name)
+
     # ------------------------------------------------------------------
     # 2. Architecture summary
     # ------------------------------------------------------------------
