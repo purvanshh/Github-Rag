@@ -272,6 +272,36 @@ class RepoAnalyzer:
         )
         return self._answer_generator.generate_answer(question)
 
+    @property
+    def explanation_engine(self) -> Any:
+        if not hasattr(self, "_explanation_engine"):
+            from reasoning.explanation_engine import CodeExplanationEngine
+            self._explanation_engine = CodeExplanationEngine(self)
+        return self._explanation_engine
+
+    def explain_file_difficulty(self, file_path: str, level: str = "medium") -> str:
+        """Explain the contents of a file at beginner/medium/advanced levels."""
+        rel_path = self._to_relative_path(file_path)
+        full_path = os.path.join(self.repo_path, rel_path)
+        if not os.path.exists(full_path):
+            return f"File {file_path} not found."
+        try:
+            with open(full_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            if len(content) > 15000:
+                content = content[:15000] + "\n... [truncated]"
+            return self.explanation_engine.explain(content, level)
+        except Exception as exc:
+            return f"Failed to read file: {exc}"
+
+    def explain_symbol_difficulty(self, symbol_name: str, level: str = "medium") -> str:
+        """Explain a class or method at beginner/medium/advanced levels."""
+        chunks = self.retriever.retrieve(symbol_name)
+        if not chunks:
+            return f"Symbol {symbol_name} not found in index."
+        content = "\n\n".join([chunk.get("content", "") if hasattr(chunk, "get") else getattr(chunk, "content", "") for chunk in chunks[:3]])
+        return self.explanation_engine.explain(content, level)
+
     # ------------------------------------------------------------------
     # 6. Combined repository overview
     # ------------------------------------------------------------------

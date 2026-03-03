@@ -265,6 +265,30 @@ def repo_sequence_diagram(repo: str, name: str) -> dict:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@app.get("/repo/{repo}/explain/file/{file_path:path}")
+def repo_explain_file(repo: str, file_path: str, level: str = "medium") -> dict:
+    """Explain a codebase file at beginner/medium/advanced level."""
+    try:
+        analyzer = _get_repo_analyzer(repo)
+        explanation = analyzer.explain_file_difficulty(file_path, level)
+        return {"explanation": explanation}
+    except Exception as exc:
+        logging.exception("File explanation failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/repo/{repo}/explain/symbol/{symbol_name}")
+def repo_explain_symbol(repo: str, symbol_name: str, level: str = "medium") -> dict:
+    """Explain a class or function at beginner/medium/advanced level."""
+    try:
+        analyzer = _get_repo_analyzer(repo)
+        explanation = analyzer.explain_symbol_difficulty(symbol_name, level)
+        return {"explanation": explanation}
+    except Exception as exc:
+        logging.exception("Symbol explanation failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 if __name__ == "__main__":  # pragma: no cover
     import uvicorn
 
