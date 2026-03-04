@@ -289,6 +289,18 @@ def repo_explain_symbol(repo: str, symbol_name: str, level: str = "medium") -> d
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@app.post("/repo/{repo}/benchmark")
+def repo_qa_benchmark(repo: str) -> dict:
+    """Run automated RAG evaluation metrics against the indexed repo."""
+    try:
+        analyzer = _get_repo_analyzer(repo)
+        summary = analyzer.run_qa_benchmark()
+        return summary
+    except Exception as exc:
+        logging.exception("QA benchmark failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 if __name__ == "__main__":  # pragma: no cover
     import uvicorn
 

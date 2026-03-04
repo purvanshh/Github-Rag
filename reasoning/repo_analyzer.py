@@ -330,3 +330,9 @@ class RepoAnalyzer:
             "directory_tree": self._directory_tree,
         }
 
+    def run_qa_benchmark(self) -> Dict[str, Any]:
+        """Runs RAG performance benchmark suite and scores the results."""
+        from evaluation.benchmark import RepositoryQABenchmark
+        bench = RepositoryQABenchmark(self)
+        return bench.run_suite()
+
