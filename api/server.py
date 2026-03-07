@@ -19,6 +19,9 @@ _server_root = Path(__file__).resolve().parent.parent
 load_dotenv(_server_root / ".env", override=True)
 load_dotenv(override=False)
 
+from observability.monitoring import configure_structured_logging
+configure_structured_logging()
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
@@ -126,6 +129,16 @@ def favicon():
 @app.get("/health")
 def health_check() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/metrics")
+def metrics_endpoint():
+    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+    from fastapi import Response
+    from observability.monitoring import PROMETHEUS_AVAILABLE
+    if PROMETHEUS_AVAILABLE:
+        return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+    return Response(content="# Prometheus client library not installed.", media_type="text/plain")
 
 
 @app.post("/ingest", response_model=IngestResponse)
