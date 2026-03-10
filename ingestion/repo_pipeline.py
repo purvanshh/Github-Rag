@@ -194,7 +194,7 @@ class RepoIngestionPipeline:
             # Embed and insert
             if chunks:
                 logger.info("[4/8] Generating incremental embeddings...")
-                embeddings = self.embedder.embed_chunks(chunks)
+                embeddings = self._embed_chunks_with_cache(chunks, repo_name)
                 logger.info("[5/8] Storing incremental vectors in Chroma...")
                 self.vector_store.add_chunks(chunks, embeddings)
 
@@ -225,7 +225,7 @@ class RepoIngestionPipeline:
 
             # 4. Generate embeddings
             logger.info("[4/8] Generating embeddings...")
-            embeddings = self.embedder.embed_chunks(chunks)
+            embeddings = self._embed_chunks_with_cache(chunks, repo_name)
             logger.info("Generated embeddings for %d chunks", len(embeddings))
 
             # 5. Store in vector database
@@ -295,4 +295,29 @@ class RepoIngestionPipeline:
         )
 
         return result
+
+    def _embed_chunks_with_cache(self, chunks: list[CodeChunk], repo_name: str) -> list[list[float]]:
+        from indexing.cache_manager import LocalCacheManager
+        cache = LocalCacheManager(repo_name)
+        embeddings = [None] * len(chunks)
+        uncached_chunks = []
+        uncached_indices = []
+        
+        for idx, chunk in enumerate(chunks):
+            txt = chunk.to_embedding_text()
+            cached_emb = cache.get("embedding", txt)
+            if cached_emb:
+                embeddings[idx] = cached_emb
+            else:
+                uncached_chunks.append(chunk)
+                uncached_indices.append(idx)
+                
+        if uncached_chunks:
+            new_embs = self.embedder.embed_chunks(uncached_chunks)
+            for new_idx, orig_idx in enumerate(uncached_indices):
+                emb = new_embs[new_idx]
+                embeddings[orig_idx] = emb
+                cache.set("embedding", uncached_chunks[new_idx].to_embedding_text(), emb)
+                
+        return embeddings
 

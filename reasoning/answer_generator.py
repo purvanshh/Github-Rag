@@ -89,6 +89,14 @@ class AnswerGenerator:
         Returns:
             Dict with 'answer', 'sources', and 'model' used.
         """
+        # Check query cache first (only for non-multi-turn queries)
+        from indexing.cache_manager import LocalCacheManager
+        cache = LocalCacheManager(self.repo_name)
+        if not conversation_id:
+            cached_val = cache.get("query", question)
+            if cached_val:
+                return cached_val
+
         # Retrieve relevant context
         context = self.retriever.retrieve_with_context(question)
         raw_results = self.retriever.retrieve(question)
@@ -136,9 +144,14 @@ class AnswerGenerator:
         # Extract source citations in a normalized format
         sources = normalize_sources(raw_results)
 
-        return {
+        result = {
             "answer": answer,
             "sources": sources,
             "model": self.model,
         }
+
+        if not conversation_id:
+            cache.set("query", question, result)
+
+        return result
 
