@@ -8,13 +8,15 @@ from reasoning.repo_analyzer import RepoAnalyzer
 
 class TestConversationManager(unittest.TestCase):
     def setUp(self):
+        from config import config
         self.test_dir = tempfile.mkdtemp()
-        os.environ["REPOS_DIR"] = self.test_dir
+        self.old_repos_dir = config.repos_dir
+        config.repos_dir = self.test_dir
 
     def tearDown(self):
+        from config import config
+        config.repos_dir = self.old_repos_dir
         shutil.rmtree(self.test_dir)
-        if "REPOS_DIR" in os.environ:
-            del os.environ["REPOS_DIR"]
 
     def test_conversation_persistence(self):
         manager = ConversationManager("test_repo")
