@@ -22,13 +22,32 @@ load_dotenv(override=False)
 from observability.monitoring import configure_structured_logging
 configure_structured_logging()
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, Header
 from pydantic import BaseModel
 
 from config import config
 from ingestion.repo_pipeline import RepoIngestionPipeline
 from reasoning.repo_analyzer import RepoAnalyzer
 from reasoning.query_router import QueryRouter
+from api.security import is_rate_limited, verify_jwt, API_KEYS, validate_repo_url
+
+def verify_api_access(authorization: str | None = Header(None)) -> str | None:
+    if not config.security_enabled:
+        return "bypass"
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing authorization header.")
+    token = authorization
+    if authorization.startswith("Bearer "):
+        token = authorization[7:]
+    user = API_KEYS.get(token)
+    if not user:
+        payload = verify_jwt(token)
+        if not payload:
+            raise HTTPException(status_code=401, detail="Invalid token or API key.")
+        user = payload.get("user")
+    if is_rate_limited(token):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded.")
+    return user
 
 
 app = FastAPI(
@@ -142,8 +161,10 @@ def metrics_endpoint():
 
 
 @app.post("/ingest", response_model=IngestResponse)
-def ingest_repo(request: IngestRequest) -> IngestResponse:
+def ingest_repo(request: IngestRequest, user: str | None = Depends(verify_api_access)) -> IngestResponse:
     """Clone, parse, chunk, embed, and index a GitHub repo."""
+    if not validate_repo_url(request.repo_url):
+        raise HTTPException(status_code=400, detail="Invalid repository URL format.")
     pipeline = RepoIngestionPipeline()
     try:
         result = pipeline.ingest_repository(request.repo_url)
@@ -162,7 +183,7 @@ def ingest_repo(request: IngestRequest) -> IngestResponse:
 
 
 @app.post("/query", response_model=QueryResponse)
-def query_codebase(request: QueryRequest) -> QueryResponse:
+def query_codebase(request: QueryRequest, user: str | None = Depends(verify_api_access)) -> QueryResponse:
     """Ask a question about an indexed codebase via QueryRouter + RepoAnalyzer."""
     if not request.repo:
         raise HTTPException(status_code=400, detail="Missing 'repo' in request body.")
