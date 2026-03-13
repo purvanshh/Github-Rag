@@ -127,7 +127,7 @@ class GraphAwareRetriever:
         results: Iterable[Dict[str, Any]],
         file_paths: Set[str],
     ) -> List[Dict[str, Any]]:
-        """Filter vector results to those whose file_path is in *file_paths*."""
+        """Filter vector results to those whose ``file_path`` is in *file_paths*."""
         if not file_paths:
             return []
         filtered: list[Dict[str, Any]] = []
@@ -142,7 +142,7 @@ class GraphAwareRetriever:
         results: Iterable[Dict[str, Any]],
         function_names: Set[str],
     ) -> List[Dict[str, Any]]:
-        """Filter vector results to those whose symbol_name is in *function_names*."""
+        """Filter vector results to those whose ``symbol_name`` is in *function_names*."""
         if not function_names:
             return []
         filtered: list[Dict[str, Any]] = []
@@ -176,20 +176,30 @@ class GraphAwareRetriever:
         neighbor_files = self._collect_neighbor_files(initial_results)
         neighbor_funcs = self._collect_neighbor_functions(initial_results)
 
-        # Fetch a broader set of chunks, then filter by graph neighborhoods.
-        expanded_results_all = self.vector_store.query(
-            query_embedding,
-            top_k=self.top_k_expanded,
-        )
+        # Fetch additional chunks from the vector store and then filter by
+        # graph neighborhoods. We keep the candidate set bounded via
+        # ``top_k_expanded`` and rely on dedup + reranking.
+        expanded_results_for_files: List[Dict[str, Any]] = []
+        if neighbor_files:
+            expanded_results_for_files = self.vector_store.query(
+                query_embedding,
+                top_k=self.top_k_expanded,
+            )
+            expanded_results_for_files = self._filter_results_by_files(
+                expanded_results_for_files,
+                neighbor_files,
+            )
 
-        expanded_by_file = self._filter_results_by_files(
-            expanded_results_all,
-            neighbor_files,
-        )
-        expanded_by_func = self._filter_results_by_functions(
-            expanded_results_all,
-            neighbor_funcs,
-        )
+        expanded_results_for_funcs: List[Dict[str, Any]] = []
+        if neighbor_funcs:
+            expanded_results_for_funcs = self.vector_store.query(
+                query_embedding,
+                top_k=self.top_k_expanded,
+            )
+            expanded_results_for_funcs = self._filter_results_by_functions(
+                expanded_results_for_funcs,
+                neighbor_funcs,
+            )
 
         # 3) Merge + deduplicate (prefer earliest occurrence)
         candidates: Dict[str, Dict[str, Any]] = {}
@@ -205,8 +215,8 @@ class GraphAwareRetriever:
                     candidates[chunk_id] = r
 
         add_results(initial_results)
-        add_results(expanded_by_file)
-        add_results(expanded_by_func)
+        add_results(expanded_results_for_files)
+        add_results(expanded_results_for_funcs)
 
         merged_results = list(candidates.values())
         if not merged_results:

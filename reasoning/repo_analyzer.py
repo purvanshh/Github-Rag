@@ -1,7 +1,7 @@
 """repo_analyzer.py — High-level orchestration of repo intelligence features.
 
 The RepoAnalyzer class unifies:
-    * Hybrid retrieval (vector search + reranker) + LLM answering
+    * Graph-aware retrieval (vector + graphs + reranker) + LLM answering
     * Architecture summarization
     * Dependency graph queries
     * Function call graph queries
@@ -32,7 +32,7 @@ from reasoning.architecture_summarizer import (
     build_directory_tree,
     generate_architecture_summary,
 )
-from retrieval.retriever import HybridCodeRetriever
+from retrieval.graph_aware_retriever import GraphAwareRetriever
 
 
 class RepoAnalyzer:
@@ -68,15 +68,23 @@ class RepoAnalyzer:
             os.path.join(self.repos_root, self.repo_name)
         )
 
-        # --- Retrieval stack (HybridCodeRetriever + AnswerGenerator) ---
+        # --- Graphs: build once and cache ---
+        self._dependency_graph: DependencyGraph = build_dependency_graph(
+            self.repo_path
+        )
+        self._call_graph: CallGraph = build_call_graph(self.repo_path)
+
+        # --- Retrieval stack (GraphAwareRetriever + AnswerGenerator) ---
         self._embedder = OpenAIEmbedder(model=config.embedding_model)
         self._vector_store: BaseVectorStore = ChromaVectorStore(
             collection_name=config.chroma_collection,
             persist_dir=config.chroma_persist_dir,
         )
-        self._retriever = HybridCodeRetriever(
+        self._retriever = GraphAwareRetriever(
             embedder=self._embedder,
             vector_store=self._vector_store,
+            dependency_graph=self._dependency_graph,
+            call_graph=self._call_graph,
             top_k_initial=top_k_initial,
             top_k_final=top_k_final,
         )
@@ -85,12 +93,6 @@ class RepoAnalyzer:
             model=config.llm_model,
             temperature=config.llm_temperature,
         )
-
-        # --- Graphs: build once and cache ---
-        self._dependency_graph: DependencyGraph = build_dependency_graph(
-            self.repo_path
-        )
-        self._call_graph: CallGraph = build_call_graph(self.repo_path)
 
         # --- Repo metadata helpers ---
         self._directory_tree: str = build_directory_tree(self.repo_path)

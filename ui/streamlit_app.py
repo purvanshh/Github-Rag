@@ -10,8 +10,6 @@ Provides an interface to:
 
 from __future__ import annotations
 
-import textwrap
-
 import requests
 import streamlit as st
 
@@ -61,11 +59,15 @@ with st.sidebar:
             with st.spinner("Cloning & indexing repository..."):
                 data = _call_api("POST", "/ingest", json={"repo_url": repo_url})
                 if data:
-                    st.session_state["current_repo"] = data["repo_name"]
+                    repo_name = data.get("repo_name") or ""
+                    st.session_state["current_repo"] = repo_name
+                    num_chunks = data.get("num_chunks", 0)
+                    num_files = data.get("num_files", 0)
+                    num_symbols = data.get("num_symbols", 0)
                     st.success(
-                        f"✅ Indexed **{data['repo_name']}** — "
-                        f"{data['num_chunks']} chunks "
-                        f"({data['num_files']} files, {data['num_symbols']} symbols)"
+                        f"✅ Indexed **{repo_name}** — "
+                        f"{num_chunks} chunks "
+                        f"({num_files} files, {num_symbols} symbols)"
                     )
         else:
             st.warning("Please enter a repo URL.")
@@ -106,14 +108,20 @@ with tab_qa:
                 )
                 if data:
                     st.markdown("### Answer")
-                    st.markdown(data["answer"])
+                    answer_text = data.get("answer") or "_No answer returned._"
+                    st.markdown(answer_text)
 
-                    if data.get("sources"):
+                    sources = data.get("sources") or []
+                    if sources:
                         st.markdown("### 📄 Sources")
-                        for src in data["sources"]:
+                        for src in sources:
+                            file_path = src.get("file", "<unknown>")
+                            symbol = src.get("symbol", "<unknown>")
+                            s_type = src.get("type", "<unknown>")
+                            lines = src.get("lines", "?")
                             st.markdown(
-                                f"- `{src['file']}` — **{src['symbol']}** "
-                                f"({src['type']}, lines {src['lines']})"
+                                f"- `{file_path}` — **{symbol}** "
+                                f"({s_type}, lines {lines})"
                             )
 
 

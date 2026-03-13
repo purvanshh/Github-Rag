@@ -75,10 +75,20 @@ class FunctionUsageResponse(BaseModel):
 # ---------- Helpers ----------
 
 
+ANALYZER_CACHE: dict[str, RepoAnalyzer] = {}
+
+
 def _get_repo_analyzer(repo_name: str) -> RepoAnalyzer:
-    """Create a RepoAnalyzer for the given repository."""
-    # In a more advanced setup, we could cache analyzers per repo.
-    return RepoAnalyzer(repo_name=repo_name, repos_root=config.repos_dir)
+    """Return a cached RepoAnalyzer for the given repository.
+
+    This avoids rebuilding dependency and call graphs on every request.
+    """
+    if repo_name not in ANALYZER_CACHE:
+        ANALYZER_CACHE[repo_name] = RepoAnalyzer(
+            repo_name=repo_name,
+            repos_root=config.repos_dir,
+        )
+    return ANALYZER_CACHE[repo_name]
 
 
 # ---------- Endpoints ----------
