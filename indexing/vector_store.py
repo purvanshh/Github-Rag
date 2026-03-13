@@ -36,7 +36,7 @@ class ChromaVectorStore(BaseVectorStore):
 
     def add_chunks(self, chunks: list[CodeChunk], embeddings: list[list[float]]) -> None:
         """Add code chunks and embeddings to Chroma."""
-        ids = [f"{c.repo_name}:{c.file_path}:{c.symbol_name}:{c.start_line}" for c in chunks]
+        ids = [c.id for c in chunks]
         documents = [c.to_embedding_text() for c in chunks]
         metadatas = [c.to_metadata() for c in chunks]
         
