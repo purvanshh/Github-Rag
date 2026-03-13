@@ -1,11 +1,22 @@
-"""
-server.py — FastAPI server for the GitHub RAG system.
+"""server.py — FastAPI server for the GitHub RAG system.
 
-Exposes REST endpoints for repo ingestion and question answering.
+Exposes REST endpoints for:
+    * Repo ingestion
+    * Question answering
+    * Repository overview
+    * File dependencies
+    * Function usage
 """
+
+from __future__ import annotations
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+
+from config import config
+from ingestion.repo_pipeline import RepoIngestionPipeline
+from reasoning.repo_analyzer import RepoAnalyzer
+from reasoning.query_router import QueryRouter
 
 
 app = FastAPI(
@@ -17,6 +28,7 @@ app = FastAPI(
 
 # ---------- Request / Response Models ----------
 
+
 class IngestRequest(BaseModel):
     repo_url: str
 
@@ -24,13 +36,15 @@ class IngestRequest(BaseModel):
 class IngestResponse(BaseModel):
     status: str
     repo_name: str
-    chunks_indexed: int
+    num_files: int
+    num_symbols: int
+    num_chunks: int
+    indexing_time: float
 
 
 class QueryRequest(BaseModel):
-    question: str
-    repo_name: str | None = None
-    top_k: int = 5
+    repo: str
+    query: str
 
 
 class QueryResponse(BaseModel):
@@ -39,27 +53,129 @@ class QueryResponse(BaseModel):
     model: str
 
 
+class RepoOverviewResponse(BaseModel):
+    architecture_summary: str | None
+    architecture_metadata: dict
+    most_connected_modules: list[tuple[str, int]]
+    most_called_functions: list[tuple[str, int]]
+    directory_tree: str
+
+
+class DependenciesResponse(BaseModel):
+    file: str
+    dependencies: list[str]
+
+
+class FunctionUsageResponse(BaseModel):
+    function: str
+    callers: list[str]
+    callees: list[str]
+
+
+# ---------- Helpers ----------
+
+
+def _get_repo_analyzer(repo_name: str) -> RepoAnalyzer:
+    """Create a RepoAnalyzer for the given repository."""
+    # In a more advanced setup, we could cache analyzers per repo.
+    return RepoAnalyzer(repo_name=repo_name, repos_root=config.repos_dir)
+
+
 # ---------- Endpoints ----------
 
+
 @app.get("/health")
-def health_check():
+def health_check() -> dict:
     return {"status": "ok"}
 
 
 @app.post("/ingest", response_model=IngestResponse)
-def ingest_repo(request: IngestRequest):
+def ingest_repo(request: IngestRequest) -> IngestResponse:
     """Clone, parse, chunk, embed, and index a GitHub repo."""
-    # TODO: Wire up the full ingestion pipeline
-    raise HTTPException(status_code=501, detail="Ingestion pipeline not yet wired up.")
+    pipeline = RepoIngestionPipeline()
+    try:
+        result = pipeline.ingest_repository(request.repo_url)
+    except Exception as exc:  # pragma: no cover - network / IO errors
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return IngestResponse(
+        status="ok",
+        repo_name=result.repo_name,
+        num_files=result.num_files,
+        num_symbols=result.num_symbols,
+        num_chunks=result.num_chunks,
+        indexing_time=result.indexing_time,
+    )
 
 
 @app.post("/query", response_model=QueryResponse)
-def query_codebase(request: QueryRequest):
-    """Ask a question about an indexed codebase."""
-    # TODO: Wire up retriever + answer generator
-    raise HTTPException(status_code=501, detail="Query pipeline not yet wired up.")
+def query_codebase(request: QueryRequest) -> QueryResponse:
+    """Ask a question about an indexed codebase via QueryRouter + RepoAnalyzer."""
+    if not request.repo:
+        raise HTTPException(status_code=400, detail="Missing 'repo' in request body.")
+
+    analyzer = _get_repo_analyzer(request.repo)
+    router = QueryRouter(analyzer)
+
+    try:
+        result = router.route_query(request.query)
+    except Exception as exc:  # pragma: no cover - LLM / IO errors
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    # For non-QA responses (e.g., dependencies, function usage), we wrap
+    # them into a simple answer string for now.
+    if "answer" in result and "sources" in result:
+        return QueryResponse(
+            answer=result["answer"],
+            sources=result["sources"],
+            model=result.get("model", config.llm_model),
+        )
+
+    # Fallback: treat the result as JSON and return a textual summary.
+    return QueryResponse(
+        answer=str(result),
+        sources=[],
+        model=config.llm_model,
+    )
 
 
-if __name__ == "__main__":
+@app.get("/repo/{repo}/overview", response_model=RepoOverviewResponse)
+def repo_overview(repo: str) -> RepoOverviewResponse:
+    """Return a combined overview for a repository."""
+    analyzer = _get_repo_analyzer(repo)
+    overview = analyzer.get_repo_overview()
+
+    return RepoOverviewResponse(
+        architecture_summary=overview.get("architecture_summary"),
+        architecture_metadata=overview.get("architecture_metadata", {}),
+        most_connected_modules=overview.get("most_connected_modules", []),
+        most_called_functions=overview.get("most_called_functions", []),
+        directory_tree=overview.get("directory_tree", ""),
+    )
+
+
+@app.get("/repo/{repo}/dependencies/{file_path:path}", response_model=DependenciesResponse)
+def repo_file_dependencies(repo: str, file_path: str) -> DependenciesResponse:
+    """Return dependency graph information for a given file."""
+    analyzer = _get_repo_analyzer(repo)
+    deps = analyzer.get_file_dependencies(file_path)
+    return DependenciesResponse(file=file_path, dependencies=deps)
+
+
+@app.get("/repo/{repo}/function/{name}", response_model=FunctionUsageResponse)
+def repo_function_usage(repo: str, name: str) -> FunctionUsageResponse:
+    """Return call graph information for a given function."""
+    analyzer = _get_repo_analyzer(repo)
+    usage = analyzer.find_function_usage(name)
+    return FunctionUsageResponse(
+        function=name,
+        callers=usage.get("callers", []),
+        callees=usage.get("callees", []),
+    )
+
+
+if __name__ == "__main__":  # pragma: no cover
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+    uvicorn.run(app, host=config.api_host, port=config.api_port)
+
