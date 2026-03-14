@@ -7,6 +7,12 @@ Provides a CLI for:
   - Starting the API server
 """
 
+# Load .env first so OPENAI_API_KEY is available in all commands
+from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).resolve().parent / ".env", override=True)
+load_dotenv(override=False)
+
 import argparse
 import sys
 
@@ -16,9 +22,8 @@ def cmd_ingest(args):
     from ingestion.clone_repo import clone_repository
     from ingestion.parse_code import parse_directory
     from ingestion.chunk_code import create_chunks_from_symbols
-    from indexing.embedder import OpenAIEmbedder
     from indexing.vector_store import ChromaVectorStore
-    from config import config
+    from config import config, get_embedder
 
     repo_url = args.repo_url
     repo_name = repo_url.rstrip("/").split("/")[-1].replace(".git", "")
@@ -43,7 +48,7 @@ def cmd_ingest(args):
 
     # Step 4: Embed and index
     print("[4/4] Generating embeddings & indexing...")
-    embedder = OpenAIEmbedder(model=config.embedding_model)
+    embedder = get_embedder()
     vector_store = ChromaVectorStore(
         collection_name=config.chroma_collection,
         persist_dir=config.chroma_persist_dir,
@@ -56,13 +61,12 @@ def cmd_ingest(args):
 
 def cmd_query(args):
     """Ask a question about the indexed codebase."""
-    from indexing.embedder import OpenAIEmbedder
     from indexing.vector_store import ChromaVectorStore
     from retrieval.retriever import CodeRetriever
     from reasoning.answer_generator import AnswerGenerator
-    from config import config
+    from config import config, get_embedder
 
-    embedder = OpenAIEmbedder(model=config.embedding_model)
+    embedder = get_embedder()
     vector_store = ChromaVectorStore(
         collection_name=config.chroma_collection,
         persist_dir=config.chroma_persist_dir,
@@ -87,7 +91,7 @@ def cmd_query(args):
 def cmd_serve(args):
     """Start the FastAPI server."""
     import uvicorn
-    from config import config
+    from config import config, get_embedder
 
     print(f"\n🚀 Starting API server on {config.api_host}:{config.api_port}\n")
     uvicorn.run("api.server:app", host=config.api_host, port=config.api_port, reload=True)

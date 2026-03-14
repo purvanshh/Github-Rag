@@ -17,7 +17,7 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List
 
-from config import config
+from config import config, get_embedder
 from graphs.call_graph import (
     CallGraph,
     build_call_graph,
@@ -25,7 +25,6 @@ from graphs.call_graph import (
     which_functions_does_it_call,
 )
 from graphs.dependency_graph import DependencyGraph, build_dependency_graph
-from indexing.embedder import OpenAIEmbedder
 from indexing.vector_store import ChromaVectorStore, BaseVectorStore
 from reasoning.answer_generator import AnswerGenerator
 from reasoning.architecture_summarizer import (
@@ -75,7 +74,7 @@ class RepoAnalyzer:
         self._call_graph: CallGraph = build_call_graph(self.repo_path)
 
         # --- Retrieval stack (GraphAwareRetriever + AnswerGenerator) ---
-        self._embedder = OpenAIEmbedder(model=config.embedding_model)
+        self._embedder = get_embedder()
         self._vector_store: BaseVectorStore = ChromaVectorStore(
             collection_name=config.chroma_collection,
             persist_dir=config.chroma_persist_dir,

@@ -23,10 +23,9 @@ import time
 from dataclasses import dataclass
 from typing import Dict, Any
 
-from config import config
 from graphs.call_graph import build_call_graph
 from graphs.dependency_graph import build_dependency_graph
-from indexing.embedder import OpenAIEmbedder
+from config import config, get_embedder
 from indexing.vector_store import ChromaVectorStore, BaseVectorStore
 from ingestion.clone_repo import clone_repository
 from ingestion.chunk_code import CodeChunk, create_chunks_from_symbols
@@ -59,7 +58,7 @@ class RepoIngestionPipeline:
     """End-to-end pipeline for preparing a repository for querying."""
 
     def __init__(self) -> None:
-        self.embedder = OpenAIEmbedder(model=config.embedding_model)
+        self.embedder = get_embedder()
         self.vector_store: BaseVectorStore = ChromaVectorStore(
             collection_name=config.chroma_collection,
             persist_dir=config.chroma_persist_dir,

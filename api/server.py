@@ -10,6 +10,15 @@ Exposes REST endpoints for:
 
 from __future__ import annotations
 
+import logging
+
+# Load .env before any other project imports so OPENAI_API_KEY is set
+from pathlib import Path
+from dotenv import load_dotenv
+_server_root = Path(__file__).resolve().parent.parent
+load_dotenv(_server_root / ".env", override=True)
+load_dotenv(override=False)
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
@@ -94,6 +103,24 @@ def _get_repo_analyzer(repo_name: str) -> RepoAnalyzer:
 # ---------- Endpoints ----------
 
 
+@app.get("/")
+def root() -> dict:
+    """Root path: point users to the API docs and health check."""
+    return {
+        "app": "GitHub Codebase Intelligence",
+        "version": "0.1.0",
+        "docs": "/docs",
+        "health": "/health",
+    }
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    """Avoid 404 when the browser requests a favicon."""
+    from fastapi.responses import Response
+    return Response(status_code=204)
+
+
 @app.get("/health")
 def health_check() -> dict:
     return {"status": "ok"}
@@ -106,6 +133,7 @@ def ingest_repo(request: IngestRequest) -> IngestResponse:
     try:
         result = pipeline.ingest_repository(request.repo_url)
     except Exception as exc:  # pragma: no cover - network / IO errors
+        logging.exception("Ingest failed")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     return IngestResponse(
@@ -130,6 +158,7 @@ def query_codebase(request: QueryRequest) -> QueryResponse:
     try:
         result = router.route_query(request.query)
     except Exception as exc:  # pragma: no cover - LLM / IO errors
+        logging.exception("Query failed")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     # For non-QA responses (e.g., dependencies, function usage), we wrap
@@ -152,36 +181,47 @@ def query_codebase(request: QueryRequest) -> QueryResponse:
 @app.get("/repo/{repo}/overview", response_model=RepoOverviewResponse)
 def repo_overview(repo: str) -> RepoOverviewResponse:
     """Return a combined overview for a repository."""
-    analyzer = _get_repo_analyzer(repo)
-    overview = analyzer.get_repo_overview()
-
-    return RepoOverviewResponse(
-        architecture_summary=overview.get("architecture_summary"),
-        architecture_metadata=overview.get("architecture_metadata", {}),
-        most_connected_modules=overview.get("most_connected_modules", []),
-        most_called_functions=overview.get("most_called_functions", []),
-        directory_tree=overview.get("directory_tree", ""),
-    )
+    try:
+        analyzer = _get_repo_analyzer(repo)
+        overview = analyzer.get_repo_overview()
+        return RepoOverviewResponse(
+            architecture_summary=overview.get("architecture_summary"),
+            architecture_metadata=overview.get("architecture_metadata", {}),
+            most_connected_modules=overview.get("most_connected_modules", []),
+            most_called_functions=overview.get("most_called_functions", []),
+            directory_tree=overview.get("directory_tree", ""),
+        )
+    except Exception as exc:
+        logging.exception("Repo overview failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.get("/repo/{repo}/dependencies/{file_path:path}", response_model=DependenciesResponse)
 def repo_file_dependencies(repo: str, file_path: str) -> DependenciesResponse:
     """Return dependency graph information for a given file."""
-    analyzer = _get_repo_analyzer(repo)
-    deps = analyzer.get_file_dependencies(file_path)
-    return DependenciesResponse(file=file_path, dependencies=deps)
+    try:
+        analyzer = _get_repo_analyzer(repo)
+        deps = analyzer.get_file_dependencies(file_path)
+        return DependenciesResponse(file=file_path, dependencies=deps)
+    except Exception as exc:
+        logging.exception("File dependencies failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.get("/repo/{repo}/function/{name}", response_model=FunctionUsageResponse)
 def repo_function_usage(repo: str, name: str) -> FunctionUsageResponse:
     """Return call graph information for a given function."""
-    analyzer = _get_repo_analyzer(repo)
-    usage = analyzer.find_function_usage(name)
-    return FunctionUsageResponse(
-        function=name,
-        callers=usage.get("callers", []),
-        callees=usage.get("callees", []),
-    )
+    try:
+        analyzer = _get_repo_analyzer(repo)
+        usage = analyzer.find_function_usage(name)
+        return FunctionUsageResponse(
+            function=name,
+            callers=usage.get("callers", []),
+            callees=usage.get("callees", []),
+        )
+    except Exception as exc:
+        logging.exception("Function usage failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 if __name__ == "__main__":  # pragma: no cover

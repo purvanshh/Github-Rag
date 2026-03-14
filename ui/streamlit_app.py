@@ -30,13 +30,16 @@ if "current_repo" not in st.session_state:
     st.session_state["current_repo"] = ""
 
 
-def _call_api(method: str, path: str, **kwargs):
+def _call_api(method: str, path: str, timeout: int = 60, **kwargs):
     """Small helper to call the FastAPI backend with basic error handling."""
     url = f"{API_URL}{path}"
     try:
-        resp = requests.request(method, url, timeout=60, **kwargs)
+        resp = requests.request(method, url, timeout=timeout, **kwargs)
     except requests.ConnectionError:
         st.error("Cannot connect to the API server. Is it running?")
+        return None
+    except requests.Timeout:
+        st.error("Request timed out. The server may still be processing (e.g. ingesting a large repo). Try again in a few minutes.")
         return None
 
     if resp.status_code >= 400:
@@ -56,8 +59,8 @@ with st.sidebar:
 
     if st.button("Analyze Repository", type="primary"):
         if repo_url:
-            with st.spinner("Cloning & indexing repository..."):
-                data = _call_api("POST", "/ingest", json={"repo_url": repo_url})
+            with st.spinner("Cloning & indexing repository (this can take several minutes for large repos)..."):
+                data = _call_api("POST", "/ingest", json={"repo_url": repo_url}, timeout=600)
                 if data:
                     repo_name = data.get("repo_name") or ""
                     st.session_state["current_repo"] = repo_name

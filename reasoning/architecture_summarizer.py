@@ -13,8 +13,6 @@ from __future__ import annotations
 import os
 from typing import Iterable
 
-from openai import OpenAI
-
 from graphs.dependency_graph import DependencyGraph, build_dependency_graph
 from reasoning.prompt_templates import ARCHITECTURE_PROMPT_TEMPLATE
 
@@ -131,28 +129,47 @@ def generate_architecture_summary(
         context=context,
     )
 
-    client = OpenAI()
-    response = client.chat.completions.create(
-        model=model,
-        temperature=temperature,
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You are a senior software architect. "
-                    "Given repository metadata, produce a clear, concise "
-                    "architecture summary."
-                ),
-            },
-            {"role": "user", "content": user_prompt},
-        ],
-    )
+    from config import config, get_gemini_api_key, get_openai_api_key
 
-    summary = response.choices[0].message.content
+    if config.llm_provider == "gemini":
+        import google.generativeai as genai
+        genai.configure(api_key=get_gemini_api_key())
+        _model = config.gemini_llm_model
+        gemini_model = genai.GenerativeModel(_model)
+        full_prompt = (
+            "You are a senior software architect. "
+            "Given repository metadata, produce a clear, concise "
+            "architecture summary.\n\n"
+            + user_prompt
+        )
+        response = gemini_model.generate_content(
+            full_prompt,
+            generation_config={"temperature": temperature},
+        )
+        summary = response.text if response and response.text else ""
+    else:
+        from openai import OpenAI
+        client = OpenAI(api_key=get_openai_api_key())
+        response = client.chat.completions.create(
+            model=model,
+            temperature=temperature,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a senior software architect. "
+                        "Given repository metadata, produce a clear, concise "
+                        "architecture summary."
+                    ),
+                },
+                {"role": "user", "content": user_prompt},
+            ],
+        )
+        summary = response.choices[0].message.content if response.choices else ""
 
     return {
         "summary": summary,
-        "model": model,
+        "model": config.gemini_llm_model if config.llm_provider == "gemini" else model,
         "file_tree": file_tree,
         "dependency_hubs": dep_graph.get_most_connected(top_k=10),
     }
