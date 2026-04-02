@@ -155,3 +155,71 @@ class AnswerGenerator:
 
         return result
 
+    def generate_answer_stream(self, question: str, conversation_id: str | None = None):
+        """Generate a stream of answer tokens and citations.
+
+        Args:
+            question: Natural language question about the codebase.
+            conversation_id: Optional conversation ID for multi-turn history.
+
+        Yields:
+            Dict representing chunk update details.
+        """
+        # Retrieve relevant context
+        context = self.retriever.retrieve_with_context(question)
+        raw_results = self.retriever.retrieve(question)
+        sources = normalize_sources(raw_results)
+        
+        # Yield metadata first (sources, model)
+        yield {"type": "metadata", "sources": sources, "model": self.model}
+
+        # Build conversation history context
+        history_context = ""
+        if conversation_id:
+            history = self.conversation_manager.get_history(conversation_id)
+            if history:
+                history_context = "Conversation history:\n"
+                for msg in history:
+                    role = "User" if msg["role"] == "user" else "Assistant"
+                    history_context += f"{role}: {msg['content']}\n"
+                history_context += "\n"
+
+        # Build prompt
+        user_prompt = QA_PROMPT_TEMPLATE.format(
+            context=f"{history_context}Indexed Code Context:\n{context}",
+            question=question,
+        )
+
+        full_answer = []
+        if self._use_gemini:
+            full_prompt = f"{SYSTEM_PROMPT}\n\n{user_prompt}"
+            response = self._gemini_model.generate_content(
+                full_prompt,
+                generation_config={"temperature": self.temperature},
+                stream=True,
+            )
+            for chunk in response:
+                text = chunk.text if chunk and hasattr(chunk, "text") and chunk.text else ""
+                full_answer.append(text)
+                yield {"type": "token", "text": text}
+        else:
+            response = self._openai_client.chat.completions.create(
+                model=self.model,
+                temperature=self.temperature,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                ],
+                stream=True,
+            )
+            for chunk in response:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    text = chunk.choices[0].delta.content
+                    full_answer.append(text)
+                    yield {"type": "token", "text": text}
+
+        answer_str = "".join(full_answer)
+        if conversation_id:
+            self.conversation_manager.add_message(conversation_id, "user", question)
+            self.conversation_manager.add_message(conversation_id, "assistant", answer_str)
+

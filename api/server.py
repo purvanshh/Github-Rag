@@ -152,10 +152,10 @@ def health_check() -> dict:
 
 @app.get("/metrics")
 def metrics_endpoint():
-    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
     from fastapi import Response
     from observability.monitoring import PROMETHEUS_AVAILABLE
     if PROMETHEUS_AVAILABLE:
+        from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
         return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
     return Response(content="# Prometheus client library not installed.", media_type="text/plain")
 
@@ -215,6 +215,27 @@ def query_codebase(request: QueryRequest, user: str | None = Depends(verify_api_
         sources=[],
         model=config.llm_model,
     )
+
+
+@app.post("/query/stream")
+def query_codebase_stream(request: QueryRequest, user: str | None = Depends(verify_api_access)):
+    """Ask a question about an indexed codebase and stream tokens back via SSE."""
+    if not request.repo:
+        raise HTTPException(status_code=400, detail="Missing 'repo' in request body.")
+
+    from fastapi.responses import StreamingResponse
+    import json
+    analyzer = _get_repo_analyzer(request.repo)
+
+    def event_generator():
+        try:
+            for chunk in analyzer.ask_question_stream(request.query, request.conversation_id):
+                yield f"data: {json.dumps(chunk)}\n\n"
+        except Exception as exc:
+            logging.exception("Stream generation failed")
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @app.get("/repo/{repo}/overview", response_model=RepoOverviewResponse)
