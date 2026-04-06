@@ -48,7 +48,7 @@ def clone_repository(repo_url: str, target_dir: str | None = None) -> str:
     return target_dir
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     import sys
     if len(sys.argv) < 2:
         print("Usage: python clone_repo.py <github_url>")
