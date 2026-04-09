@@ -1,0 +1,10 @@
+{
+  "name": "github-rag-frontend",
+  "version": "1.0.0",
+  "description": "Frontend dashboard for Github-Rag codebase intelligence engine",
+  "main": "index.html",
+  "scripts": {
+    "start": "npx serve ."
+  },
+  "dependencies": {}
+}
