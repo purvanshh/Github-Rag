@@ -105,6 +105,15 @@ class FunctionUsageResponse(BaseModel):
     callees: list[str]
 
 
+class ReviewRequest(BaseModel):
+    file_path: str
+
+
+class ReviewResponse(BaseModel):
+    file_path: str
+    review: str
+
+
 # ---------- Helpers ----------
 
 
@@ -253,6 +262,18 @@ def repo_overview(repo: str) -> RepoOverviewResponse:
         )
     except Exception as exc:
         logging.exception("Repo overview failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/repo/{repo}/review", response_model=ReviewResponse)
+def repo_file_review(repo: str, request: ReviewRequest, user: str | None = Depends(verify_api_access)) -> ReviewResponse:
+    """Run an automated AI code review on the given file path."""
+    try:
+        analyzer = _get_repo_analyzer(repo)
+        review_text = analyzer.run_code_review(request.file_path)
+        return ReviewResponse(file_path=request.file_path, review=review_text)
+    except Exception as exc:
+        logging.exception("File code review failed")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 

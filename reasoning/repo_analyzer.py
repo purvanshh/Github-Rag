@@ -283,6 +283,26 @@ class RepoAnalyzer:
             self._explanation_engine = CodeExplanationEngine(self)
         return self._explanation_engine
 
+    @property
+    def code_reviewer(self) -> Any:
+        if not hasattr(self, "_code_reviewer"):
+            from reasoning.code_reviewer import AICodeReviewer
+            self._code_reviewer = AICodeReviewer(self)
+        return self._code_reviewer
+
+    def run_code_review(self, file_path: str) -> str:
+        """Run automated AI code review on a code file."""
+        rel_path = self._to_relative_path(file_path)
+        full_path = os.path.join(self.repo_path, rel_path)
+        if not os.path.exists(full_path):
+            return f"File {file_path} not found."
+        try:
+            with open(full_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            return self.code_reviewer.review_code(content, file_path=rel_path)
+        except Exception as exc:
+            return f"Failed to read file: {exc}"
+
     def explain_file_difficulty(self, file_path: str, level: str = "medium") -> str:
         """Explain the contents of a file at beginner/medium/advanced levels."""
         rel_path = self._to_relative_path(file_path)
