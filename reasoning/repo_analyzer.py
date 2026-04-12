@@ -303,6 +303,17 @@ class RepoAnalyzer:
         except Exception as exc:
             return f"Failed to read file: {exc}"
 
+    @property
+    def repo_architect(self) -> Any:
+        if not hasattr(self, "_repo_architect"):
+            from reasoning.repo_architect import AIRepoArchitect
+            self._repo_architect = AIRepoArchitect(self)
+        return self._repo_architect
+
+    def generate_architecture_report(self) -> str:
+        """Generate a complete repository architecture and technical debt report."""
+        return self.repo_architect.generate_architecture_report()
+
     def explain_file_difficulty(self, file_path: str, level: str = "medium") -> str:
         """Explain the contents of a file at beginner/medium/advanced levels."""
         rel_path = self._to_relative_path(file_path)

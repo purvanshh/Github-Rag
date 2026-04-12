@@ -114,6 +114,10 @@ class ReviewResponse(BaseModel):
     review: str
 
 
+class ArchitectResponse(BaseModel):
+    report: str
+
+
 # ---------- Helpers ----------
 
 
@@ -274,6 +278,18 @@ def repo_file_review(repo: str, request: ReviewRequest, user: str | None = Depen
         return ReviewResponse(file_path=request.file_path, review=review_text)
     except Exception as exc:
         logging.exception("File code review failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/repo/{repo}/architecture-report", response_model=ArchitectResponse)
+def repo_architecture_report(repo: str, user: str | None = Depends(verify_api_access)) -> ArchitectResponse:
+    """Generate a complete repository architecture and technical debt report."""
+    try:
+        analyzer = _get_repo_analyzer(repo)
+        report_text = analyzer.generate_architecture_report()
+        return ArchitectResponse(report=report_text)
+    except Exception as exc:
+        logging.exception("Architecture report failed")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
