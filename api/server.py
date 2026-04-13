@@ -293,6 +293,18 @@ def repo_architecture_report(repo: str, user: str | None = Depends(verify_api_ac
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@app.post("/repo/{repo}/autonomous-run")
+def repo_autonomous_run(repo: str, user: str | None = Depends(verify_api_access)) -> dict:
+    """Run an autonomous analysis scan and generate findings."""
+    try:
+        analyzer = _get_repo_analyzer(repo)
+        res = analyzer.run_autonomous_agent()
+        return res
+    except Exception as exc:
+        logging.exception("Autonomous run failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @app.get("/repo/{repo}/dependencies/{file_path:path}", response_model=DependenciesResponse)
 def repo_file_dependencies(repo: str, file_path: str) -> DependenciesResponse:
     """Return dependency graph information for a given file."""

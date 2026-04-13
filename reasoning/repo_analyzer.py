@@ -314,6 +314,17 @@ class RepoAnalyzer:
         """Generate a complete repository architecture and technical debt report."""
         return self.repo_architect.generate_architecture_report()
 
+    @property
+    def autonomous_agent(self) -> Any:
+        if not hasattr(self, "_autonomous_agent"):
+            from reasoning.autonomous_agent import AutonomousRepositoryAgent
+            self._autonomous_agent = AutonomousRepositoryAgent(self)
+        return self._autonomous_agent
+
+    def run_autonomous_agent(self) -> Dict[str, Any]:
+        """Run an autonomous analysis scan and document findings."""
+        return self.autonomous_agent.run_autonomous_scan()
+
     def explain_file_difficulty(self, file_path: str, level: str = "medium") -> str:
         """Explain the contents of a file at beginner/medium/advanced levels."""
         rel_path = self._to_relative_path(file_path)
