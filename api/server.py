@@ -405,6 +405,22 @@ def repo_qa_benchmark(repo: str) -> dict:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@app.get("/enterprise/audit-logs")
+def enterprise_audit_logs(authorization: str | None = Header(None)) -> list:
+    """Retrieve recent enterprise audit logs (requires admin)."""
+    from api.enterprise import verify_role_access, get_audit_logs
+    verify_role_access(authorization, ["admin"])
+    return get_audit_logs()
+
+
+@app.get("/enterprise/collections")
+def enterprise_collections(authorization: str | None = Header(None)) -> dict:
+    """Retrieve repository collections (requires developer or admin)."""
+    from api.enterprise import verify_role_access, COLLECTIONS
+    verify_role_access(authorization, ["admin", "developer"])
+    return COLLECTIONS
+
+
 if __name__ == "__main__":  # pragma: no cover
     import uvicorn
 
