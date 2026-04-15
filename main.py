@@ -72,6 +72,33 @@ def cmd_serve(args):
     uvicorn.run("api.server:app", host=config.api_host, port=config.api_port, reload=True)
 
 
+def cmd_review(args):
+    """Run an automated AI code review on the given file path."""
+    from reasoning.repo_analyzer import RepoAnalyzer
+    analyzer = RepoAnalyzer(args.repo)
+    result = analyzer.run_code_review(args.file_path)
+    print("\n--- AI Code Review Report ---")
+    print(result)
+
+
+def cmd_architect_report(args):
+    """Generate a complete repository architecture and technical debt report."""
+    from reasoning.repo_analyzer import RepoAnalyzer
+    analyzer = RepoAnalyzer(args.repo)
+    result = analyzer.generate_architecture_report()
+    print("\n--- AI Architecture Report ---")
+    print(result)
+
+
+def cmd_autonomous_run(args):
+    """Run an autonomous analysis scan and document findings."""
+    from reasoning.repo_analyzer import RepoAnalyzer
+    analyzer = RepoAnalyzer(args.repo)
+    result = analyzer.run_autonomous_agent()
+    print(f"\n✅ Autonomous scan finished with status: {result['status']}")
+    print(f"Report saved to: {result['report_path']}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="GitHub Codebase Intelligence System — Repo-level RAG",
@@ -89,6 +116,19 @@ def main():
     # Serve
     subparsers.add_parser("serve", help="Start the API server")
 
+    # Review
+    review_parser = subparsers.add_parser("review", help="Run automated AI code review")
+    review_parser.add_argument("file_path", help="Relative path of file to review")
+    review_parser.add_argument("--repo", default="Github-Rag", help="Repository identifier")
+
+    # Architect Report
+    architect_parser = subparsers.add_parser("architect-report", help="Generate repo architecture report")
+    architect_parser.add_argument("--repo", default="Github-Rag", help="Repository identifier")
+
+    # Autonomous Run
+    autonomous_parser = subparsers.add_parser("autonomous-run", help="Run autonomous scan on repo")
+    autonomous_parser.add_argument("--repo", default="Github-Rag", help="Repository identifier")
+
     args = parser.parse_args()
 
     if args.command == "ingest":
@@ -97,6 +137,12 @@ def main():
         cmd_query(args)
     elif args.command == "serve":
         cmd_serve(args)
+    elif args.command == "review":
+        cmd_review(args)
+    elif args.command == "architect-report":
+        cmd_architect_report(args)
+    elif args.command == "autonomous-run":
+        cmd_autonomous_run(args)
     else:
         parser.print_help()
         sys.exit(1)
